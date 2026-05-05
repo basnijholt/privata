@@ -1,0 +1,7 @@
+- id: privata
+  name: privata
+  description: Check that Python module privacy boundaries stay intentional.
+  entry: privata .
+  language: python
+  pass_filenames: false
+  types_or: [python, pyi]

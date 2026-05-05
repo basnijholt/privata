@@ -12,6 +12,20 @@ privata <project-root>
 
 The command scans Python files under `<project-root>/src`.
 
+## Pre-Commit
+
+Add Privata to another repository's `.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  - repo: https://github.com/basnijholt/privata
+    rev: v0.1.1
+    hooks:
+      - id: privata
+```
+
+The hook runs `privata .` once per commit, so it checks the repository as a whole instead of only the changed files.
+
 ## Public Symbols
 
 Privata reports top-level public symbols that are not imported from another production module:

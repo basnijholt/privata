@@ -50,6 +50,18 @@ privata .
 Privata exits with status `0` when no privacy issues are found.
 It exits with status `1` when it finds public symbols that can be made private or private module imports that cross package boundaries.
 
+## Pre-Commit
+
+Add Privata to another repository's `.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  - repo: https://github.com/basnijholt/privata
+    rev: v0.1.1
+    hooks:
+      - id: privata
+```
+
 ## Expected Layout
 
 Privata expects a `src/` directory:

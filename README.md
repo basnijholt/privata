@@ -21,7 +21,8 @@ uv tool install privata
 For local development:
 
 ```bash
-uv sync --extra dev
+uv sync --extra dev --group docs
+uv run pre-commit install
 ```
 
 ## Usage
@@ -30,6 +31,16 @@ Run Privata from a project root:
 
 ```bash
 privata .
+```
+
+Use Privata as a pre-commit hook in another repository:
+
+```yaml
+repos:
+  - repo: https://github.com/basnijholt/privata
+    rev: v0.1.1
+    hooks:
+      - id: privata
 ```
 
 Example output:
@@ -67,10 +78,7 @@ If only tests import a symbol, Privata treats that symbol as private.
 ## Development
 
 ```bash
-uv run --extra dev pytest
-uv run --extra dev ruff check .
-uv run --extra dev ruff format --check .
-uv run --extra dev mypy src tests
-uv run --extra dev ty check
+uv run pytest  # enforces 100% coverage
+uv run pre-commit run --all-files
 uv build
 ```

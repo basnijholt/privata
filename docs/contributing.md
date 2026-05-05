@@ -12,28 +12,26 @@ Contributions are welcome.
 git clone https://github.com/basnijholt/privata.git
 cd privata
 uv sync --extra dev --group docs
+uv run pre-commit install
 ```
 
 ## Run Tests
 
 ```bash
-uv run pytest
+uv run pytest  # enforces 100% coverage
 ```
 
 ## Code Quality
 
 ```bash
-uv run ruff check .
-uv run ruff format --check .
-uv run mypy src tests
-uv run ty check
+uv run pre-commit run --all-files
 uv build
 ```
 
-The repository also uses pre-commit:
+Install the Git hook once after setup:
 
 ```bash
-uv run pre-commit run --all-files
+uv run pre-commit install
 ```
 
 ## Build Docs

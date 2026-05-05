@@ -90,8 +90,6 @@ def _module_name_from_path(py_file: Path, src_dir: Path) -> str | None:
     """Derive dotted module name from file path relative to src/."""
     rel = py_file.relative_to(src_dir)
     parts = list(rel.with_suffix("").parts)
-    if not parts:
-        return None
     if parts[-1] == "__init__":
         parts = parts[:-1]
     if not parts:
@@ -268,9 +266,7 @@ def _framework_callback_names(node: ast.FunctionDef | ast.AsyncFunctionDef) -> s
     return names
 
 
-def _names_in_expr(node: ast.AST | None) -> set[str]:
-    if node is None:
-        return set()
+def _names_in_expr(node: ast.AST) -> set[str]:
     return {child.id for child in ast.walk(node) if isinstance(child, ast.Name)}
 
 
@@ -493,6 +489,7 @@ def collect_private_module_imports(modules: dict[str, Module]) -> list[PrivateMo
 
         for private_module_name, lineno in _find_private_imports_in_module(
             consumer,
+            consumer.tree,
             private_modules,
         ):
             record(private_module_name, consumer, lineno)
@@ -505,13 +502,12 @@ def collect_private_module_imports(modules: dict[str, Module]) -> list[PrivateMo
 
 def _find_private_imports_in_module(
     consumer: Module,
+    tree: ast.Module,
     private_modules: set[str],
 ) -> set[tuple[str, int]]:
     findings: set[tuple[str, int]] = set()
-    if consumer.tree is None:
-        return findings
 
-    for node in ast.walk(consumer.tree):
+    for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             findings.update(_private_imports_from_import(node, private_modules))
             continue
@@ -690,7 +686,7 @@ def main() -> int:
             rel = issue.imported_by_path.relative_to(project_root)
             print(f"  {rel}:{issue.lineno}: imports private module `{issue.module}`")
 
-    return 0
+    return 1
 
 
 if __name__ == "__main__":
