@@ -5,3 +5,12 @@
   language: python
   pass_filenames: false
   types_or: [python, pyi]
+
+- id: privata-manual
+  name: privata
+  description: Check Python module privacy boundaries on demand.
+  entry: privata .
+  language: python
+  pass_filenames: false
+  stages: [manual]
+  types_or: [python, pyi]

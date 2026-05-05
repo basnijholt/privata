@@ -19,12 +19,28 @@ Add Privata to another repository's `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/basnijholt/privata
-    rev: v0.1.1
+    rev: v0.1.2
     hooks:
       - id: privata
 ```
 
 The hook runs `privata .` once per commit, so it checks the repository as a whole instead of only the changed files.
+
+For a less strict setup, use the manual hook:
+
+```yaml
+repos:
+  - repo: https://github.com/basnijholt/privata
+    rev: v0.1.2
+    hooks:
+      - id: privata-manual
+```
+
+Then run it on demand:
+
+```bash
+pre-commit run --hook-stage manual privata-manual --all-files
+```
 
 ## Public Symbols
 

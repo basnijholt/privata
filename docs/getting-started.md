@@ -57,9 +57,15 @@ Add Privata to another repository's `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/basnijholt/privata
-    rev: v0.1.1
+    rev: v0.1.2
     hooks:
       - id: privata
+```
+
+Use `id: privata-manual` instead if you only want to run Privata on demand:
+
+```bash
+pre-commit run --hook-stage manual privata-manual --all-files
 ```
 
 ## Expected Layout
