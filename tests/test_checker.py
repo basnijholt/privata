@@ -8,7 +8,9 @@ from typing import TYPE_CHECKING
 import pytest
 
 from privata import find_private_candidates, find_private_module_imports
-from privata._checker import Module, collect_private_module_imports, find_cross_imports, main
+from privata._checker import main
+from privata._imports import collect_private_module_imports, find_cross_imports
+from privata._models import Module
 from privata.cli import main as cli_main
 
 if TYPE_CHECKING:

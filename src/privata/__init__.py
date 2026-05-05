@@ -1,15 +1,9 @@
 """Python module privacy checks."""
 
-from privata._checker import (
-    Module,
-    PrivateModuleImport,
-    Symbol,
-    collect_modules,
-    collect_private_module_imports,
-    find_cross_imports,
-    find_private_candidates,
-    find_private_module_imports,
-)
+from privata._checker import find_private_candidates, find_private_module_imports
+from privata._imports import collect_private_module_imports, find_cross_imports
+from privata._models import Module, PrivateModuleImport, Symbol
+from privata._modules import collect_modules
 
 try:
     from privata._version import __version__
