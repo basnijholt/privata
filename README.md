@@ -43,6 +43,8 @@ repos:
       - id: privata
 ```
 
+The hook currently expects the checked repository to use a `src/` layout.
+
 For a less strict setup that only runs when requested:
 
 ```yaml
