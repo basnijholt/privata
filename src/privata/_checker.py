@@ -78,7 +78,6 @@ _FRAMEWORK_REGISTRATION_CALLS = {"add_api_route", "add_api_websocket_route", "in
 _ALLOWED_PUBLIC_NAMES = {"logger"}
 _ENTRYPOINT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_\\.]*:[A-Za-z_][A-Za-z0-9_]*$")
 _UVICORN_RE = re.compile(r"\buvicorn\s+([A-Za-z_][A-Za-z0-9_\.]*):([A-Za-z_][A-Za-z0-9_]*)\b")
-_MIN_ARG_COUNT = 2
 _SPLIT_MODULE_PART_COUNT = 2
 
 
@@ -662,11 +661,7 @@ def find_private_module_imports(project_root: Path) -> list[PrivateModuleImport]
 
 def main() -> int:
     """Entry point: scan project and report module-local public symbols."""
-    if len(sys.argv) < _MIN_ARG_COUNT:
-        print(f"Usage: {sys.argv[0]} <project-root>", file=sys.stderr)
-        return 2
-
-    project_root = Path(sys.argv[1]).resolve()
+    project_root = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path.cwd()
     try:
         candidates, private_module_imports = _collect_privacy_findings(project_root)
     except FileNotFoundError as exc:

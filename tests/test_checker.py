@@ -5,9 +5,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from privata import find_private_candidates, find_private_module_imports
+from privata._checker import main
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    import pytest
 
 
 def _write(path: Path, content: str) -> None:
@@ -337,3 +340,26 @@ assert helper() == 1
     )
 
     assert _private_module_imports(tmp_path) == set()
+
+
+def test_cli_defaults_to_current_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Running privata without arguments scans the current directory."""
+    _write(
+        tmp_path / "src" / "pkg" / "module.py",
+        """
+def helper() -> int:
+    return 1
+""".strip()
+        + "\n",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["privata"])
+
+    assert main() == 0
+    output = capsys.readouterr()
+    assert "src/pkg/module.py:1: function `helper`" in output.out
+    assert output.err == ""
