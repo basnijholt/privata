@@ -6,6 +6,8 @@
 [![Python Versions](https://img.shields.io/pypi/pyversions/privata.svg)](https://pypi.org/project/privata/)
 [![Docs](https://img.shields.io/badge/docs-privata.nijho.lt-blue)](http://privata.nijho.lt/)
 
+<img src="docs/assets/logo.svg" alt="Privata logo" align="right" width="120" />
+
 Find Python code that looks public but is only used privately.
 
 Privata is a static checker for keeping module boundaries intentional.
