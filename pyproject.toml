@@ -11,7 +11,36 @@ requires-python = ">=3.12"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Bas Nijholt" }]
+keywords = [
+  "architecture",
+  "code-quality",
+  "imports",
+  "module-boundaries",
+  "python",
+  "static-analysis",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Software Development :: Quality Assurance",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Utilities",
+]
 dependencies = []
+
+[project.urls]
+Documentation = "http://privata.nijho.lt/"
+Issues = "https://github.com/basnijholt/privata/issues"
+Repository = "https://github.com/basnijholt/privata"
 
 [project.optional-dependencies]
 dev = [

@@ -5,7 +5,7 @@
 site_name = "Privata"
 site_description = "A Python module privacy checker for keeping public interfaces intentional"
 site_author = "Bas Nijholt"
-site_url = "https://basnijholt.github.io/privata/"
+site_url = "http://privata.nijho.lt/"
 copyright = "Copyright &copy; 2026 Bas Nijholt"
 
 repo_url = "https://github.com/basnijholt/privata"

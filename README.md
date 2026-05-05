@@ -4,7 +4,7 @@
 [![CI](https://github.com/basnijholt/privata/actions/workflows/ci.yml/badge.svg)](https://github.com/basnijholt/privata/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/privata.svg)](https://pypi.org/project/privata/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/privata.svg)](https://pypi.org/project/privata/)
-[![Docs](https://img.shields.io/badge/docs-basnijholt.github.io%2Fprivata-blue)](https://basnijholt.github.io/privata/)
+[![Docs](https://img.shields.io/badge/docs-privata.nijho.lt-blue)](http://privata.nijho.lt/)
 
 Keep Python module interfaces intentional.
 
