@@ -1,12 +1,12 @@
-"""Detect module privacy issues within ``src/``.
+"""Detect module privacy issues within Python source roots.
 
-- Public top-level symbols that are never imported by other src modules.
+- Public top-level symbols that are never imported by other production modules.
 - Private modules imported from outside their containing package subtree.
 
 Usage:
     privata <project-root>
 
-Only imports within ``src/`` count, so test imports are ignored.
+Only imports within production source roots count, so test imports are ignored.
 """
 
 from __future__ import annotations
@@ -76,18 +76,73 @@ _CLI_DECORATORS = {"callback", "command"}
 _FRAMEWORK_CONSTRUCTORS = {"APIRouter", "FastAPI", "Typer"}
 _FRAMEWORK_REGISTRATION_CALLS = {"add_api_route", "add_api_websocket_route", "include_router"}
 _ALLOWED_PUBLIC_NAMES = {"logger"}
+_IGNORED_SOURCE_DIR_NAMES = {
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".tox",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "docs",
+    "htmlcov",
+    "site",
+    "tests",
+}
 _ENTRYPOINT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_\\.]*:[A-Za-z_][A-Za-z0-9_]*$")
 _UVICORN_RE = re.compile(r"\buvicorn\s+([A-Za-z_][A-Za-z0-9_\.]*):([A-Za-z_][A-Za-z0-9_]*)\b")
 _SPLIT_MODULE_PART_COUNT = 2
 
 
-def _find_src_dir(project_root: Path) -> Path | None:
+def _src_dir(project_root: Path) -> Path | None:
     src = project_root / "src"
     return src if src.is_dir() else None
 
 
+def _load_tach_source_roots(project_root: Path) -> list[Path]:
+    tach_path = project_root / "tach.toml"
+    if not tach_path.exists():
+        return []
+
+    data = tomllib.loads(tach_path.read_text(encoding="utf-8"))
+    source_roots = data.get("source_roots", [])
+    if not isinstance(source_roots, list):
+        return []
+
+    roots: list[Path] = []
+    for source_root in source_roots:
+        if not isinstance(source_root, str):
+            continue
+        root = (project_root / source_root).resolve()
+        if root.is_dir():
+            roots.append(root)
+    return roots
+
+
+def _source_roots(project_root: Path) -> list[Path]:
+    tach_roots = _load_tach_source_roots(project_root)
+    if tach_roots:
+        return tach_roots
+
+    src = _src_dir(project_root)
+    if src is not None:
+        return [src]
+
+    return [project_root]
+
+
+def _should_skip_source_file(py_file: Path, source_root: Path) -> bool:
+    rel_parts = py_file.relative_to(source_root).parts
+    return any(
+        part in _IGNORED_SOURCE_DIR_NAMES or (part.startswith(".") and part != ".")
+        for part in rel_parts[:-1]
+    )
+
+
 def _module_name_from_path(py_file: Path, src_dir: Path) -> str | None:
-    """Derive dotted module name from file path relative to src/."""
+    """Derive dotted module name from file path relative to a source root."""
     rel = py_file.relative_to(src_dir)
     parts = list(rel.with_suffix("").parts)
     if parts[-1] == "__init__":
@@ -119,86 +174,90 @@ def _module_is_within_package(module_name: str, package_name: str) -> bool:
     return module_name == package_name or module_name.startswith(f"{package_name}.")
 
 
-def collect_modules(src_dir: Path) -> dict[str, Module]:  # noqa: C901, PLR0912
-    """Parse every .py under src/ and collect top-level public definitions."""
+def collect_modules(source_roots: list[Path]) -> dict[str, Module]:  # noqa: C901, PLR0912
+    """Parse every production .py under source roots and collect top-level public definitions."""
     modules: dict[str, Module] = {}
 
-    for py_file in sorted(src_dir.rglob("*.py")):
-        if "__pycache__" in py_file.parts:
-            continue
-        mod_name = _module_name_from_path(py_file, src_dir)
-        if mod_name is None:
-            continue
+    for source_root in source_roots:
+        for py_file in sorted(source_root.rglob("*.py")):
+            if _should_skip_source_file(py_file, source_root):
+                continue
+            mod_name = _module_name_from_path(py_file, source_root)
+            if mod_name is None:
+                continue
 
-        source = py_file.read_text(encoding="utf-8")
-        try:
-            tree = ast.parse(source, filename=str(py_file))
-        except SyntaxError:
-            continue
+            source = py_file.read_text(encoding="utf-8")
+            try:
+                tree = ast.parse(source, filename=str(py_file))
+            except SyntaxError:
+                continue
 
-        # Detect __all__ to skip explicitly exported names
-        explicit_exports = _extract_all(tree)
-        framework_related_names = _collect_framework_related_names(tree)
-        pydantic_model_names: set[str] = set()
+            # Detect __all__ to skip explicitly exported names
+            explicit_exports = _extract_all(tree)
+            framework_related_names = _collect_framework_related_names(tree)
+            pydantic_model_names: set[str] = set()
 
-        mod = Module(
-            name=mod_name,
-            path=py_file,
-            package_parts=_package_parts(mod_name, is_package_init=py_file.name == "__init__.py"),
-            tree=tree,
-        )
+            mod = Module(
+                name=mod_name,
+                path=py_file,
+                package_parts=_package_parts(
+                    mod_name,
+                    is_package_init=py_file.name == "__init__.py",
+                ),
+                tree=tree,
+            )
 
-        for node in tree.body:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                if _is_framework_callback(node):
-                    continue
-                _maybe_add(
-                    mod,
-                    _SymbolCandidate(node.name, "function", node.lineno),
-                    explicit_exports,
-                    ignored_names=framework_related_names,
-                )
-            elif isinstance(node, ast.ClassDef):
-                if _is_pydantic_model(node, pydantic_model_names):
-                    pydantic_model_names.add(node.name)
-                    continue
-                _maybe_add(
-                    mod,
-                    _SymbolCandidate(node.name, "class", node.lineno),
-                    explicit_exports,
-                    ignored_names=framework_related_names,
-                )
-            elif isinstance(node, ast.Assign):
-                if _is_framework_constructor_call(node.value):
-                    continue
-                for target in node.targets:
-                    for name in _names_from_target(target):
+            for node in tree.body:
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    if _is_framework_callback(node):
+                        continue
+                    _maybe_add(
+                        mod,
+                        _SymbolCandidate(node.name, "function", node.lineno),
+                        explicit_exports,
+                        ignored_names=framework_related_names,
+                    )
+                elif isinstance(node, ast.ClassDef):
+                    if _is_pydantic_model(node, pydantic_model_names):
+                        pydantic_model_names.add(node.name)
+                        continue
+                    _maybe_add(
+                        mod,
+                        _SymbolCandidate(node.name, "class", node.lineno),
+                        explicit_exports,
+                        ignored_names=framework_related_names,
+                    )
+                elif isinstance(node, ast.Assign):
+                    if _is_framework_constructor_call(node.value):
+                        continue
+                    for target in node.targets:
+                        for name in _names_from_target(target):
+                            _maybe_add(
+                                mod,
+                                _SymbolCandidate(name, "variable", node.lineno),
+                                explicit_exports,
+                                ignored_names=framework_related_names,
+                            )
+                elif isinstance(node, ast.AnnAssign) and node.target:
+                    if node.value is not None and _is_framework_constructor_call(node.value):
+                        continue
+                    for name in _names_from_target(node.target):
                         _maybe_add(
                             mod,
                             _SymbolCandidate(name, "variable", node.lineno),
                             explicit_exports,
                             ignored_names=framework_related_names,
                         )
-            elif isinstance(node, ast.AnnAssign) and node.target:
-                if node.value is not None and _is_framework_constructor_call(node.value):
-                    continue
-                for name in _names_from_target(node.target):
-                    _maybe_add(
-                        mod,
-                        _SymbolCandidate(name, "variable", node.lineno),
-                        explicit_exports,
-                        ignored_names=framework_related_names,
-                    )
-            elif hasattr(ast, "TypeAlias") and isinstance(node, ast.TypeAlias):
-                for name in _names_from_target(node.name):
-                    _maybe_add(
-                        mod,
-                        _SymbolCandidate(name, "variable", node.lineno),
-                        explicit_exports,
-                        ignored_names=framework_related_names,
-                    )
+                elif hasattr(ast, "TypeAlias") and isinstance(node, ast.TypeAlias):
+                    for name in _names_from_target(node.name):
+                        _maybe_add(
+                            mod,
+                            _SymbolCandidate(name, "variable", node.lineno),
+                            explicit_exports,
+                            ignored_names=framework_related_names,
+                        )
 
-        modules[mod_name] = mod
+            modules[mod_name] = mod
 
     return modules
 
@@ -389,7 +448,7 @@ def _resolve_relative_import(
 
 
 def find_cross_imports(modules: dict[str, Module]) -> set[tuple[str, str]]:  # noqa: C901, PLR0912
-    """Return (module_name, symbol_name) pairs that are imported by another src module."""
+    """Return pairs that are imported by another production source module."""
     known = set(modules)
     used: set[tuple[str, str]] = set()
 
@@ -460,7 +519,7 @@ def find_cross_imports(modules: dict[str, Module]) -> set[tuple[str, str]]:  # n
 
 
 def collect_private_module_imports(modules: dict[str, Module]) -> list[PrivateModuleImport]:
-    """Return private src modules imported from outside their package subtree."""
+    """Return private modules imported from outside their package subtree."""
     private_modules = {
         module_name for module_name in modules if _is_private_module_name(module_name)
     }
@@ -620,12 +679,7 @@ def _load_tach_interface_exports(project_root: Path) -> set[tuple[str, str]]:
 
 def _collect_privacy_findings(project_root: Path) -> tuple[list[Symbol], list[PrivateModuleImport]]:
     """Collect public-symbol and private-module boundary findings."""
-    src_dir = _find_src_dir(project_root)
-    if src_dir is None:
-        msg = f"No src/ directory found in {project_root}"
-        raise FileNotFoundError(msg)
-
-    modules = collect_modules(src_dir)
+    modules = collect_modules(_source_roots(project_root))
     cross_imports = find_cross_imports(modules)
     external_entrypoints = _collect_external_entrypoints(project_root)
     public_interface_exports = _load_tach_interface_exports(project_root)
@@ -650,7 +704,7 @@ def find_private_candidates(project_root: Path) -> list[Symbol]:
 
 
 def find_private_module_imports(project_root: Path) -> list[PrivateModuleImport]:
-    """Find private src modules imported from outside their package subtree."""
+    """Find private modules imported from outside their package subtree."""
     _, private_module_imports = _collect_privacy_findings(project_root)
     return private_module_imports
 
@@ -658,11 +712,7 @@ def find_private_module_imports(project_root: Path) -> list[PrivateModuleImport]
 def main() -> int:
     """Entry point: scan project and report module-local public symbols."""
     project_root = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path.cwd()
-    try:
-        candidates, private_module_imports = _collect_privacy_findings(project_root)
-    except FileNotFoundError as exc:
-        print(str(exc), file=sys.stderr)
-        return 1
+    candidates, private_module_imports = _collect_privacy_findings(project_root)
 
     if not candidates and not private_module_imports:
         print("No module privacy issues found.")

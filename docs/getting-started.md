@@ -9,7 +9,7 @@ icon: lucide/rocket
 You need:
 
 - Python 3.12+
-- a Python project with source code under `src/`
+- a Python project with importable source files
 
 ## Installation
 
@@ -68,9 +68,15 @@ Use `id: privata-manual` instead if you only want to run Privata on demand:
 pre-commit run --hook-stage manual privata-manual --all-files
 ```
 
-## Expected Layout
+## Source Roots
 
-Privata expects a `src/` directory:
+Privata uses `tach.toml` `source_roots` when present:
+
+```toml
+source_roots = ["lib"]
+```
+
+Without Tach source roots, Privata prefers a `src/` directory:
 
 ```text
 project/
@@ -81,5 +87,6 @@ project/
         └── module.py
 ```
 
+If `src/` is absent, Privata scans the project root and ignores tests, virtualenvs, build output, docs output, and hidden tooling directories.
 Tests can live anywhere.
 Imports from tests do not count when deciding whether a symbol should stay public.

@@ -10,7 +10,8 @@ icon: lucide/terminal
 privata <project-root>
 ```
 
-The command scans Python files under `<project-root>/src`.
+The command scans production Python source roots under `<project-root>`.
+It uses `tach.toml` `source_roots` when present, otherwise prefers `src/`, otherwise scans the project root while ignoring tests, virtualenvs, build output, docs output, and hidden tooling directories.
 
 ## Pre-Commit
 
@@ -69,7 +70,7 @@ Imports from outside that subtree are reported.
 
 The following keep a symbol public:
 
-- another module under `src/` imports the symbol
+- another module under a production source root imports the symbol
 - a package `__init__.py` re-exports the symbol
 - a literal `__all__` includes the symbol
 - `pyproject.toml` lists the symbol as a console or GUI script entry point

@@ -8,7 +8,7 @@
 
 Keep Python module interfaces intentional.
 
-Privata scans a `src/` layout Python project and reports public top-level symbols that are only used inside their own module.
+Privata scans Python source roots and reports public top-level symbols that are only used inside their own module.
 It also reports imports of private modules from outside their owning package subtree.
 Test imports do not count, so tests can still reach internals without forcing those internals to stay public.
 
@@ -42,8 +42,6 @@ repos:
     hooks:
       - id: privata
 ```
-
-The hook currently expects the checked repository to use a `src/` layout.
 
 For a less strict setup that only runs when requested:
 
@@ -80,13 +78,16 @@ No module privacy issues found.
 
 ## What Privata Checks
 
-- Public top-level functions, classes, variables, and type aliases in `src/`.
-- Whether those symbols are imported by another production module under `src/`.
+- Public top-level functions, classes, variables, and type aliases in production source roots.
+- Whether those symbols are imported by another production module under those roots.
 - Whether private modules such as `pkg._internal` are imported outside their containing package subtree.
 - Console entry points in `pyproject.toml`.
 - Uvicorn entry points in shell scripts and Dockerfiles.
 - Symbols exported through package `__init__.py` and `__all__`.
 - Tach `[[interfaces]]` entries, when `tach.toml` is present.
+
+Privata uses `tach.toml` `source_roots` when present.
+Otherwise it prefers `src/` when that directory exists, and falls back to scanning the project root while ignoring tests, virtualenvs, build output, docs output, and hidden tooling directories.
 
 Privata intentionally ignores imports from `tests/`.
 If only tests import a symbol, Privata treats that symbol as private.

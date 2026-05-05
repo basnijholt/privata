@@ -322,7 +322,7 @@ VALUE = _internal.VALUE
 
 
 def test_private_module_imported_only_by_tests_is_ignored(tmp_path: Path) -> None:
-    """Only imports from src/ should count for private module detection."""
+    """Only imports from production source roots count for private module detection."""
     _write(
         tmp_path / "src" / "pkg" / "_internal.py",
         """
@@ -744,13 +744,96 @@ def test_cli_reports_no_src_directory(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Missing src/ is reported as a CLI error."""
+    """A project without Python source files is clean instead of requiring src/."""
     monkeypatch.setattr("sys.argv", ["privata", str(tmp_path)])
 
-    assert main() == 1
+    assert main() == 0
     output = capsys.readouterr()
-    assert output.out == ""
-    assert f"No src/ directory found in {tmp_path}" in output.err
+    assert output.out == "No module privacy issues found.\n"
+    assert output.err == ""
+
+
+def test_project_root_is_scanned_when_src_directory_is_absent(tmp_path: Path) -> None:
+    """Projects without src/ should still be scanned from the project root."""
+    _write(
+        tmp_path / "pkg" / "module.py",
+        """
+def helper() -> int:
+    return 1
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "tests" / "test_module.py",
+        """
+from pkg.module import helper
+""".strip()
+        + "\n",
+    )
+
+    assert ("pkg.module", "helper") in _symbols(tmp_path)
+
+
+def test_tach_source_roots_define_scanned_roots(tmp_path: Path) -> None:
+    """Tach source_roots should control which roots are scanned."""
+    _write(
+        tmp_path / "lib" / "pkg" / "module.py",
+        """
+def helper() -> int:
+    return 1
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "pkg" / "ignored.py",
+        """
+def ignored() -> int:
+    return 1
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "tach.toml",
+        """
+source_roots = ["lib"]
+""".strip()
+        + "\n",
+    )
+
+    symbols = _symbols(tmp_path)
+    assert ("pkg.module", "helper") in symbols
+    assert ("pkg.ignored", "ignored") not in symbols
+
+
+def test_malformed_tach_source_roots_fall_back_to_project_layout(tmp_path: Path) -> None:
+    """Malformed Tach source_roots should not break source discovery."""
+    _write(
+        tmp_path / "pkg" / "module.py",
+        """
+def helper() -> int:
+    return 1
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "tach.toml",
+        """
+source_roots = "pkg"
+""".strip()
+        + "\n",
+    )
+
+    assert ("pkg.module", "helper") in _symbols(tmp_path)
+
+    _write(
+        tmp_path / "tach.toml",
+        """
+source_roots = [1, "missing"]
+""".strip()
+        + "\n",
+    )
+
+    assert ("pkg.module", "helper") in _symbols(tmp_path)
 
 
 def test_cli_reports_clean_project(

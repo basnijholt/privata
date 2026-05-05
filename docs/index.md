@@ -10,7 +10,7 @@ icon: lucide/shield-check
   <img src="assets/logo.svg" alt="Privata logo" width="140" />
 </div>
 
-Privata scans Python projects that use a `src/` layout and reports public symbols that are only used inside their own module.
+Privata scans Python source roots and reports public symbols that are only used inside their own module.
 It also reports private module imports that cross package boundaries.
 
 [PyPI package](https://pypi.org/project/privata/) · [GitHub repository](https://github.com/basnijholt/privata)
@@ -31,6 +31,7 @@ Continue with [Getting Started](getting-started.md), or see the [usage guide](us
 - Detects private modules imported from outside their owning package subtree.
 - Honors package `__init__.py` re-exports and literal `__all__` declarations.
 - Honors `pyproject.toml` console entry points, Uvicorn shell entry points, and Tach interfaces.
+- Uses Tach `source_roots`, `src/`, or the project root depending on the repository layout.
 - Uses only the Python standard library at runtime.
 
 ## Example
