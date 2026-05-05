@@ -1,0 +1,12 @@
+.DS_Store
+.venv/
+.ruff_cache/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+dist/
+build/
+site/
+*.egg-info/
+.privata/
+src/privata/_version.py

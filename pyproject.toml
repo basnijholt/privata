@@ -1,0 +1,81 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "privata"
+dynamic = ["version"]
+description = "A Python module privacy checker for keeping public interfaces intentional."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Bas Nijholt" }]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.14",
+  "pre-commit>=4",
+  "pytest>=8.4",
+  "ruff>=0.13",
+  "ty",
+]
+
+[dependency-groups]
+docs = [
+  "markdown-code-runner>=2.7.0",
+  "markdown-gfm-admonition",
+  "zensical",
+]
+
+[project.scripts]
+privata = "privata.cli:main"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/privata/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/privata"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+  "D",       # pydocstyle
+  "ANN",     # annotations
+  "COM812",  # trailing comma
+  "ISC001",  # implicit string concat
+  "T20",     # print statements are acceptable for CLI output
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+  "S101",    # assert usage is fine in tests
+  "PLR2004", # magic values are fine in tests
+  "S105",    # test tokens
+  "S106",    # test tokens
+]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+packages = ["privata"]
+
+[tool.ty.rules]
+unused-ignore-comment = "ignore"
