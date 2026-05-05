@@ -6,12 +6,39 @@
 [![Python Versions](https://img.shields.io/pypi/pyversions/privata.svg)](https://pypi.org/project/privata/)
 [![Docs](https://img.shields.io/badge/docs-privata.nijho.lt-blue)](http://privata.nijho.lt/)
 
-Keep Python module interfaces intentional.
+Find Python code that looks public but is only used privately.
 
-Privata scans Python source roots and reports public top-level symbols that are only used inside their own module.
-It also reports imports of private modules from outside their owning package subtree.
-It validates literal `__all__` declarations so stale and incomplete exports are visible.
+Privata is a static checker for keeping module boundaries intentional.
+It scans your production Python modules and reports three kinds of interface drift:
+
+- public top-level functions, classes, variables, and type aliases that are only used inside their own module
+- imports of private modules such as `pkg._internal` from outside their owning package subtree
+- literal `__all__` declarations that are stale, incomplete, or exporting names that do not exist
+
+It is designed for packages and applications where `helper()` should become `_helper()` once it is no longer part of the production interface.
 Test imports do not count, so tests can still reach internals without forcing those internals to stay public.
+
+## Example
+
+Given:
+
+```python
+# src/example/service.py
+def helper() -> int:
+    return 1
+
+
+def run() -> int:
+    return helper()
+```
+
+Privata reports:
+
+```text
+Found 1 public symbols that could be made private:
+
+  src/example/service.py:1: function `helper`
+```
 
 ## Install
 
@@ -33,6 +60,9 @@ Run Privata from a project root:
 ```bash
 privata .
 ```
+
+Privata uses `tach.toml` `source_roots` when present.
+Otherwise it prefers `src/` when that directory exists, and falls back to scanning the project root while ignoring tests, virtualenvs, build output, docs output, and hidden tooling directories.
 
 Use Privata as a pre-commit hook in another repository:
 
@@ -58,7 +88,7 @@ repos:
 pre-commit run --hook-stage manual privata-manual --all-files
 ```
 
-Example output:
+Full output can include multiple issue types:
 
 ```text
 Found 2 public symbols that could be made private:
@@ -91,9 +121,6 @@ No module privacy issues found.
 - Uvicorn entry points in shell scripts and Dockerfiles.
 - Symbols exported through package `__init__.py` and `__all__`.
 - Tach `[[interfaces]]` entries, when `tach.toml` is present.
-
-Privata uses `tach.toml` `source_roots` when present.
-Otherwise it prefers `src/` when that directory exists, and falls back to scanning the project root while ignoring tests, virtualenvs, build output, docs output, and hidden tooling directories.
 
 Privata intentionally ignores imports from `tests/`.
 If only tests import a symbol, Privata treats that symbol as private.

@@ -908,6 +908,27 @@ from pkg.module import helper as imported_helper
     assert ("pkg.module", "helper") in _symbols(tmp_path)
 
 
+def test_root_test_files_are_ignored_when_scanning_project_root(tmp_path: Path) -> None:
+    """Root-level test files should not keep production symbols public."""
+    _write(
+        tmp_path / "pkg" / "module.py",
+        """
+def helper() -> int:
+    return 1
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "test_module.py",
+        """
+from pkg.module import helper
+""".strip()
+        + "\n",
+    )
+
+    assert ("pkg.module", "helper") in _symbols(tmp_path)
+
+
 def test_tach_source_roots_define_scanned_roots(tmp_path: Path) -> None:
     """Tach source_roots should control which roots are scanned."""
     _write(
