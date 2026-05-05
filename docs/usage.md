@@ -79,6 +79,13 @@ The following keep a symbol public:
 
 Imports from tests do not count.
 
+## Export Validation
+
+When a module declares a literal `__all__`, Privata validates that it is exact.
+Names listed in `__all__` must be bound by the module.
+Public top-level bindings must be listed in `__all__`.
+Use underscore-prefixed imports or helpers for implementation details that should not be exported.
+
 ## Framework Exceptions
 
 Privata skips common framework-owned names:

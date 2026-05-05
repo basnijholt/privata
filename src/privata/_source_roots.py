@@ -25,6 +25,10 @@ _IGNORED_SOURCE_DIR_NAMES = {
 }
 
 
+def _is_test_module_filename(name: str) -> bool:
+    return name.startswith("test_") or name.endswith("_test.py")
+
+
 def _src_dir(project_root: Path) -> Path | None:
     """Return the conventional src/ root when it exists."""
     src = project_root / "src"
@@ -67,6 +71,9 @@ def source_roots(project_root: Path) -> list[Path]:
 
 def should_skip_source_file(py_file: Path, source_root: Path) -> bool:
     """Return whether a Python file should be ignored as non-production source."""
+    if _is_test_module_filename(py_file.name):
+        return True
+
     rel_parts = py_file.relative_to(source_root).parts
     return any(
         part in _IGNORED_SOURCE_DIR_NAMES or (part.startswith(".") and part != ".")

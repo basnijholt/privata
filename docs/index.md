@@ -29,6 +29,7 @@ Continue with [Getting Started](getting-started.md), or see the [usage guide](us
 - Finds public module-level functions, classes, variables, and type aliases that can be made private.
 - Ignores test imports when deciding whether a symbol is public.
 - Detects private modules imported from outside their owning package subtree.
+- Validates literal `__all__` declarations for stale and missing exports.
 - Honors package `__init__.py` re-exports and literal `__all__` declarations.
 - Honors `pyproject.toml` console entry points, Uvicorn shell entry points, and Tach interfaces.
 - Uses Tach `source_roots`, `src/`, or the project root depending on the repository layout.

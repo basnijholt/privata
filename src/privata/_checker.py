@@ -7,15 +7,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from privata._entrypoints import collect_external_entrypoints, load_tach_interface_exports
+from privata._exports import collect_export_issues
 from privata._imports import collect_private_module_imports, find_cross_imports
 from privata._modules import collect_modules
 from privata._source_roots import source_roots
 
 if TYPE_CHECKING:
-    from privata._models import PrivateModuleImport, Symbol
+    from privata._models import ExportIssue, PrivateModuleImport, Symbol
 
 
-def _collect_privacy_findings(project_root: Path) -> tuple[list[Symbol], list[PrivateModuleImport]]:
+def _collect_privacy_findings(
+    project_root: Path,
+) -> tuple[list[Symbol], list[PrivateModuleImport], list[ExportIssue]]:
     """Collect public-symbol and private-module boundary findings."""
     modules = collect_modules(source_roots(project_root))
     cross_imports = find_cross_imports(modules)
@@ -32,49 +35,88 @@ def _collect_privacy_findings(project_root: Path) -> tuple[list[Symbol], list[Pr
     ]
     candidates.sort(key=lambda s: (str(s.path), s.lineno))
     private_module_imports = collect_private_module_imports(modules)
-    return candidates, private_module_imports
+    export_issues = collect_export_issues(modules)
+    return candidates, private_module_imports, export_issues
 
 
 def find_private_candidates(project_root: Path) -> list[Symbol]:
     """Find symbols that appear module-local and should be private."""
-    candidates, _ = _collect_privacy_findings(project_root)
+    candidates, _, _ = _collect_privacy_findings(project_root)
     return candidates
 
 
 def find_private_module_imports(project_root: Path) -> list[PrivateModuleImport]:
     """Find private modules imported from outside their package subtree."""
-    _, private_module_imports = _collect_privacy_findings(project_root)
+    _, private_module_imports, _ = _collect_privacy_findings(project_root)
     return private_module_imports
+
+
+def find_export_issues(project_root: Path) -> list[ExportIssue]:
+    """Find literal __all__ declarations that are stale or incomplete."""
+    _, _, export_issues = _collect_privacy_findings(project_root)
+    return export_issues
 
 
 def main() -> int:
     """Entry point: scan project and report module-local public symbols."""
     project_root = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path.cwd()
-    candidates, private_module_imports = _collect_privacy_findings(project_root)
+    candidates, private_module_imports, export_issues = _collect_privacy_findings(project_root)
 
-    if not candidates and not private_module_imports:
+    if not candidates and not private_module_imports and not export_issues:
         print("No module privacy issues found.")
         return 0
 
     if candidates:
-        print(f"Found {len(candidates)} public symbols that could be made private:\n")
-        for sym in candidates:
-            rel = sym.path.relative_to(project_root)
-            print(f"  {rel}:{sym.lineno}: {sym.kind} `{sym.name}`")
+        _print_private_candidates(candidates, project_root)
 
     if private_module_imports:
         if candidates:
             print()
-        print(
-            "Found "
-            f"{len(private_module_imports)} "
-            "private module imports outside their package subtree:\n",
-        )
-        for issue in private_module_imports:
-            rel = issue.imported_by_path.relative_to(project_root)
-            print(f"  {rel}:{issue.lineno}: imports private module `{issue.module}`")
+        _print_private_module_imports(private_module_imports, project_root)
+
+    if export_issues:
+        if candidates or private_module_imports:
+            print()
+        _print_export_issues(export_issues, project_root)
 
     return 1
+
+
+def _print_private_candidates(candidates: list[Symbol], project_root: Path) -> None:
+    print(f"Found {len(candidates)} public symbols that could be made private:\n")
+    for symbol in candidates:
+        rel = symbol.path.relative_to(project_root)
+        print(f"  {rel}:{symbol.lineno}: {symbol.kind} `{symbol.name}`")
+
+
+def _print_private_module_imports(
+    private_module_imports: list[PrivateModuleImport],
+    project_root: Path,
+) -> None:
+    print(
+        "Found "
+        f"{len(private_module_imports)} "
+        "private module imports outside their package subtree:\n",
+    )
+    for private_import in private_module_imports:
+        rel = private_import.imported_by_path.relative_to(project_root)
+        print(f"  {rel}:{private_import.lineno}: imports private module `{private_import.module}`")
+
+
+def _print_export_issues(export_issues: list[ExportIssue], project_root: Path) -> None:
+    print(f"Found {len(export_issues)} __all__ export issues:\n")
+    for export_issue in export_issues:
+        rel = export_issue.path.relative_to(project_root)
+        if export_issue.kind == "unknown":
+            print(
+                f"  {rel}:{export_issue.lineno}: "
+                f"__all__ exports unknown name `{export_issue.name}`",
+            )
+        else:
+            print(
+                f"  {rel}:{export_issue.lineno}: "
+                f"public name `{export_issue.name}` missing from __all__",
+            )
 
 
 if __name__ == "__main__":

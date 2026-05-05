@@ -43,6 +43,17 @@ class PrivateModuleImport:
     lineno: int
 
 
+@dataclass
+class ExportIssue:
+    """A mismatch between literal __all__ and public module bindings."""
+
+    module: str
+    path: Path
+    name: str
+    kind: str
+    lineno: int
+
+
 @dataclass(frozen=True)
 class SymbolCandidate:
     """A candidate top-level symbol before filtering."""

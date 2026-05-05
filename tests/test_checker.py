@@ -7,8 +7,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from privata import find_private_candidates, find_private_module_imports
+from privata import find_export_issues, find_private_candidates, find_private_module_imports
 from privata._checker import main
+from privata._exports import collect_export_issues
 from privata._imports import collect_private_module_imports, find_cross_imports
 from privata._models import Module
 from privata.cli import main as cli_main
@@ -30,6 +31,10 @@ def _private_module_imports(project_root: Path) -> set[tuple[str, str]]:
     return {
         (issue.module, issue.imported_by) for issue in find_private_module_imports(project_root)
     }
+
+
+def _export_issues(project_root: Path) -> set[tuple[str, str, str]]:
+    return {(issue.module, issue.name, issue.kind) for issue in find_export_issues(project_root)}
 
 
 def test_fastapi_route_functions_and_models_are_skipped(tmp_path: Path) -> None:
@@ -515,6 +520,105 @@ __all__ = ["EXPORTED"]
     assert ("pkg.exports", "EXPORTED") not in _symbols(tmp_path)
 
 
+def test_literal_all_reports_unknown_and_missing_public_exports(tmp_path: Path) -> None:
+    """Literal ``__all__`` should be exact for public top-level bindings."""
+    _write(
+        tmp_path / "src" / "pkg" / "exports.py",
+        """
+from __future__ import annotations
+import json as json_module
+from dataclasses import dataclass
+
+__all__ = ["Exported", "MISSING"]
+
+@dataclass
+class Exported:
+    value: str
+
+async def async_helper() -> None:
+    pass
+
+LOCAL = json_module.dumps({"x": 1})
+_PRIVATE = 1
+""".strip()
+        + "\n",
+    )
+
+    assert _export_issues(tmp_path) == {
+        ("pkg.exports", "MISSING", "unknown"),
+        ("pkg.exports", "LOCAL", "missing"),
+        ("pkg.exports", "async_helper", "missing"),
+        ("pkg.exports", "dataclass", "missing"),
+        ("pkg.exports", "json_module", "missing"),
+    }
+
+
+def test_literal_all_accepts_reexports_and_try_fallbacks(tmp_path: Path) -> None:
+    """Common package export patterns should validate when ``__all__`` is complete."""
+    _write(
+        tmp_path / "src" / "pkg" / "module.py",
+        """
+class PublicThing:
+    pass
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "__init__.py",
+        """
+from .module import PublicThing
+
+try:
+    from ._version import __version__
+except ImportError:
+    __version__ = "0.0.0"
+
+__all__ = ["PublicThing", "__version__"]
+""".strip()
+        + "\n",
+    )
+
+    assert _export_issues(tmp_path) == set()
+
+
+def test_dynamic_all_is_not_validated(tmp_path: Path) -> None:
+    """Non-literal ``__all__`` forms are ignored by export validation."""
+    _write(
+        tmp_path / "src" / "pkg" / "exports.py",
+        """
+PUBLIC = 1
+NAMES = ["PUBLIC"]
+__all__ = ["PUBLIC", *NAMES]
+""".strip()
+        + "\n",
+    )
+
+    assert _export_issues(tmp_path) == set()
+
+
+def test_literal_all_checks_annotated_assignments_and_type_aliases(tmp_path: Path) -> None:
+    """Annotated assignments and PEP 695 type aliases are public bindings."""
+    _write(
+        tmp_path / "src" / "pkg" / "exports.py",
+        """
+__all__ = ["Name"]
+
+Name: type = str
+type UserId = int
+""".strip()
+        + "\n",
+    )
+
+    assert _export_issues(tmp_path) == {("pkg.exports", "UserId", "missing")}
+
+
+def test_export_validation_ignores_unparsed_modules(tmp_path: Path) -> None:
+    """Modules without parsed ASTs should not affect export validation."""
+    module = Module("pkg.empty", tmp_path / "empty.py", ("pkg",), tree=None)
+
+    assert collect_export_issues({"pkg.empty": module}) == []
+
+
 def test_string_all_does_not_hide_symbols(tmp_path: Path) -> None:
     """A string ``__all__`` is malformed and should not hide symbols."""
     _write(
@@ -776,6 +880,34 @@ from pkg.module import helper
     assert ("pkg.module", "helper") in _symbols(tmp_path)
 
 
+def test_root_level_test_files_are_ignored_in_project_root_fallback(tmp_path: Path) -> None:
+    """Root-level pytest modules should not count as production imports."""
+    _write(
+        tmp_path / "pkg" / "module.py",
+        """
+def helper() -> int:
+    return 1
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "test_module.py",
+        """
+from pkg.module import helper
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "module_test.py",
+        """
+from pkg.module import helper as imported_helper
+""".strip()
+        + "\n",
+    )
+
+    assert ("pkg.module", "helper") in _symbols(tmp_path)
+
+
 def test_tach_source_roots_define_scanned_roots(tmp_path: Path) -> None:
     """Tach source_roots should control which roots are scanned."""
     _write(
@@ -888,6 +1020,27 @@ from pkg.one import _internal
     assert "src/pkg/two/public.py:1: imports private module `pkg.one._internal`" in output.out
 
 
+def test_cli_reports_export_issues_without_symbol_candidates(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Literal ``__all__`` mismatches are printed as their own finding section."""
+    _write(
+        tmp_path / "src" / "pkg" / "exports.py",
+        """
+__all__ = ["MISSING"]
+""".strip()
+        + "\n",
+    )
+    monkeypatch.setattr("sys.argv", ["privata", str(tmp_path)])
+
+    assert main() == 1
+    output = capsys.readouterr()
+    assert "Found 1 __all__ export issues:" in output.out
+    assert "src/pkg/exports.py:1: __all__ exports unknown name `MISSING`" in output.out
+
+
 def test_cli_separates_symbol_and_private_import_findings(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -916,6 +1069,29 @@ def local_helper() -> int:
     assert main() == 1
     output = capsys.readouterr()
     assert "function `local_helper`\n\nFound 1 private module imports" in output.out
+
+
+def test_cli_separates_export_findings_from_previous_sections(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A blank line separates export findings from earlier finding sections."""
+    _write(
+        tmp_path / "src" / "pkg" / "exports.py",
+        """
+__all__ = ["MISSING"]
+
+def local_helper() -> int:
+    return 1
+""".strip()
+        + "\n",
+    )
+    monkeypatch.setattr("sys.argv", ["privata", str(tmp_path)])
+
+    assert main() == 1
+    output = capsys.readouterr()
+    assert "function `local_helper`\n\nFound 2 __all__ export issues" in output.out
 
 
 @pytest.mark.filterwarnings("ignore:.*found in sys.modules.*:RuntimeWarning")

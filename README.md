@@ -10,6 +10,7 @@ Keep Python module interfaces intentional.
 
 Privata scans Python source roots and reports public top-level symbols that are only used inside their own module.
 It also reports imports of private modules from outside their owning package subtree.
+It validates literal `__all__` declarations so stale and incomplete exports are visible.
 Test imports do not count, so tests can still reach internals without forcing those internals to stay public.
 
 ## Install
@@ -68,6 +69,10 @@ Found 2 public symbols that could be made private:
 Found 1 private module imports outside their package subtree:
 
   src/example/api.py:3: imports private module `example.worker._runtime`
+
+Found 1 __all__ export issues:
+
+  src/example/__init__.py:5: public name `Service` missing from __all__
 ```
 
 If the project is clean:
@@ -81,6 +86,7 @@ No module privacy issues found.
 - Public top-level functions, classes, variables, and type aliases in production source roots.
 - Whether those symbols are imported by another production module under those roots.
 - Whether private modules such as `pkg._internal` are imported outside their containing package subtree.
+- Whether literal `__all__` declarations exactly match public top-level bindings.
 - Console entry points in `pyproject.toml`.
 - Uvicorn entry points in shell scripts and Dockerfiles.
 - Symbols exported through package `__init__.py` and `__all__`.

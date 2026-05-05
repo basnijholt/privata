@@ -18,6 +18,13 @@ repos:
 
   - repo: local
     hooks:
+      - id: privata
+        name: privata (module privacy)
+        entry: uv run privata .
+        language: system
+        pass_filenames: false
+        types_or: [python, pyi]
+
       - id: mypy
         name: mypy (type checker)
         entry: uv run mypy src tests
