@@ -41,6 +41,17 @@ def collect_export_issues(modules: dict[str, Module]) -> list[ExportIssue]:
                 module=module.name,
                 path=module.path,
                 name=name,
+                kind="private",
+                lineno=lineno,
+            )
+            for name in sorted(name for name in all_names & all_bindings if _is_private(name))
+        )
+
+        issues.extend(
+            ExportIssue(
+                module=module.name,
+                path=module.path,
+                name=name,
                 kind="missing",
                 lineno=lineno,
             )
@@ -150,6 +161,10 @@ def _nested_public_binding_statements(node: ast.stmt) -> list[list[ast.stmt]]:
 def _add_binding(bindings: set[str], name: str, *, public_only: bool) -> None:
     if public_only and name in _IGNORED_PUBLIC_BINDINGS:
         return
-    if public_only and name.startswith("_") and not (name.startswith("__") and name.endswith("__")):
+    if public_only and _is_private(name):
         return
     bindings.add(name)
+
+
+def _is_private(name: str) -> bool:
+    return name.startswith("_") and not (name.startswith("__") and name.endswith("__"))
