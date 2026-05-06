@@ -521,7 +521,7 @@ __all__ = ["EXPORTED"]
 
 
 def test_literal_all_reports_unknown_and_missing_public_exports(tmp_path: Path) -> None:
-    """Literal ``__all__`` should be exact for public top-level bindings."""
+    """Literal ``__all__`` should be exact for public local top-level bindings."""
     _write(
         tmp_path / "src" / "pkg" / "exports.py",
         """
@@ -548,8 +548,6 @@ _PRIVATE = 1
         ("pkg.exports", "MISSING", "unknown"),
         ("pkg.exports", "LOCAL", "missing"),
         ("pkg.exports", "async_helper", "missing"),
-        ("pkg.exports", "dataclass", "missing"),
-        ("pkg.exports", "json_module", "missing"),
     }
 
 
@@ -574,6 +572,102 @@ except ImportError:
     __version__ = "0.0.0"
 
 __all__ = ["PublicThing", "__version__"]
+""".strip()
+        + "\n",
+    )
+
+    assert _export_issues(tmp_path) == set()
+
+
+def test_literal_all_does_not_require_package_init_imports(tmp_path: Path) -> None:
+    """Package imports are valid explicit exports but are not mandatory exports."""
+    _write(
+        tmp_path / "src" / "pkg" / "module.py",
+        """
+class PublicThing:
+    pass
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "__init__.py",
+        """
+from .module import PublicThing
+
+__all__ = []
+""".strip()
+        + "\n",
+    )
+
+    assert _export_issues(tmp_path) == set()
+
+
+def test_literal_all_does_not_require_logger_binding(tmp_path: Path) -> None:
+    """Module-level loggers are implementation details by convention."""
+    _write(
+        tmp_path / "src" / "pkg" / "exports.py",
+        """
+__all__ = ["public"]
+
+logger = object()
+
+def public() -> None:
+    pass
+""".strip()
+        + "\n",
+    )
+
+    assert _export_issues(tmp_path) == set()
+
+
+def test_literal_all_does_not_require_regular_module_imports(tmp_path: Path) -> None:
+    """Imported dependencies are not local public API that must be listed in ``__all__``."""
+    _write(
+        tmp_path / "src" / "pkg" / "exports.py",
+        """
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+import json
+
+__all__ = ["Exported"]
+
+@dataclass
+class Exported:
+    path: Path
+    value: Any
+""".strip()
+        + "\n",
+    )
+
+    assert _export_issues(tmp_path) == set()
+
+
+def test_literal_all_accepts_imported_regular_module_exports(tmp_path: Path) -> None:
+    """A regular module may still explicitly export an imported binding."""
+    _write(
+        tmp_path / "src" / "pkg" / "exports.py",
+        """
+from .types import PublicType
+
+__all__ = ["PublicType"]
+""".strip()
+        + "\n",
+    )
+
+    assert _export_issues(tmp_path) == set()
+
+
+def test_literal_all_accepts_private_explicit_exports(tmp_path: Path) -> None:
+    """Exporting a private binding explicitly is unusual but statically valid."""
+    _write(
+        tmp_path / "src" / "pkg" / "exports.py",
+        """
+__all__ = ["_private_helper"]
+
+def _private_helper() -> None:
+    pass
 """.strip()
         + "\n",
     )

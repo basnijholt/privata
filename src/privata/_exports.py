@@ -7,6 +7,8 @@ import ast
 from privata._models import ExportIssue, Module
 from privata._modules import _names_from_target
 
+_IGNORED_PUBLIC_BINDINGS = {"logger"}
+
 
 def collect_export_issues(modules: dict[str, Module]) -> list[ExportIssue]:
     """Return mismatches between literal __all__ and public bindings."""
@@ -20,7 +22,8 @@ def collect_export_issues(modules: dict[str, Module]) -> list[ExportIssue]:
         if all_names is None:
             continue
 
-        bindings = _public_bindings(module.tree)
+        all_bindings = _all_bindings(module.tree)
+        public_bindings = _public_bindings(module.tree)
 
         issues.extend(
             ExportIssue(
@@ -30,7 +33,7 @@ def collect_export_issues(modules: dict[str, Module]) -> list[ExportIssue]:
                 kind="unknown",
                 lineno=lineno,
             )
-            for name in sorted(all_names - bindings)
+            for name in sorted(all_names - all_bindings)
         )
 
         issues.extend(
@@ -41,7 +44,7 @@ def collect_export_issues(modules: dict[str, Module]) -> list[ExportIssue]:
                 kind="missing",
                 lineno=lineno,
             )
-            for name in sorted(bindings - all_names)
+            for name in sorted(public_bindings - all_names)
         )
 
     return sorted(issues, key=lambda item: (str(item.path), item.lineno, item.kind, item.name))
@@ -68,18 +71,41 @@ def _strings_from_node(node: ast.expr) -> set[str] | None:
     return None
 
 
-def _public_bindings(tree: ast.Module) -> set[str]:
+def _all_bindings(tree: ast.Module) -> set[str]:
     bindings: set[str] = set()
-    _collect_public_bindings(tree.body, bindings)
+    _collect_bound_names(tree.body, bindings, public_only=False, include_imports=True)
     return bindings
 
 
-def _collect_public_bindings(statements: list[ast.stmt], bindings: set[str]) -> None:
+def _public_bindings(tree: ast.Module) -> set[str]:
+    bindings: set[str] = set()
+    _collect_bound_names(
+        tree.body,
+        bindings,
+        public_only=True,
+        include_imports=False,
+    )
+    return bindings
+
+
+def _collect_bound_names(
+    statements: list[ast.stmt],
+    bindings: set[str],
+    *,
+    public_only: bool,
+    include_imports: bool,
+) -> None:
     for node in statements:
-        for name in _bound_names(node):
-            _add_public_binding(bindings, name)
+        if include_imports or not isinstance(node, (ast.Import, ast.ImportFrom)):
+            for name in _bound_names(node):
+                _add_binding(bindings, name, public_only=public_only)
         for nested_statements in _nested_public_binding_statements(node):
-            _collect_public_bindings(nested_statements, bindings)
+            _collect_bound_names(
+                nested_statements,
+                bindings,
+                public_only=public_only,
+                include_imports=include_imports,
+            )
 
 
 def _bound_names(node: ast.stmt) -> list[str]:
@@ -121,7 +147,9 @@ def _nested_public_binding_statements(node: ast.stmt) -> list[list[ast.stmt]]:
     ]
 
 
-def _add_public_binding(bindings: set[str], name: str) -> None:
-    if name.startswith("_") and not (name.startswith("__") and name.endswith("__")):
+def _add_binding(bindings: set[str], name: str, *, public_only: bool) -> None:
+    if public_only and name in _IGNORED_PUBLIC_BINDINGS:
+        return
+    if public_only and name.startswith("_") and not (name.startswith("__") and name.endswith("__")):
         return
     bindings.add(name)
