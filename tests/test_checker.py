@@ -659,8 +659,8 @@ __all__ = ["PublicType"]
     assert _export_issues(tmp_path) == set()
 
 
-def test_literal_all_accepts_private_explicit_exports(tmp_path: Path) -> None:
-    """Exporting a private binding explicitly is unusual but statically valid."""
+def test_literal_all_reports_private_explicit_exports(tmp_path: Path) -> None:
+    """Literal ``__all__`` should not export private bindings."""
     _write(
         tmp_path / "src" / "pkg" / "exports.py",
         """
@@ -672,7 +672,7 @@ def _private_helper() -> None:
         + "\n",
     )
 
-    assert _export_issues(tmp_path) == set()
+    assert _export_issues(tmp_path) == {("pkg.exports", "_private_helper", "private")}
 
 
 def test_dynamic_all_is_not_validated(tmp_path: Path) -> None:
@@ -1154,6 +1154,29 @@ __all__ = ["MISSING"]
     output = capsys.readouterr()
     assert "Found 1 __all__ export issues:" in output.out
     assert "src/pkg/exports.py:1: __all__ exports unknown name `MISSING`" in output.out
+
+
+def test_cli_reports_private_all_exports(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Private names in ``__all__`` should be printed as private export issues."""
+    _write(
+        tmp_path / "src" / "pkg" / "exports.py",
+        """
+__all__ = ["_private_helper"]
+
+def _private_helper() -> None:
+    pass
+""".strip()
+        + "\n",
+    )
+    monkeypatch.setattr("sys.argv", ["privata", str(tmp_path)])
+
+    assert main() == 1
+    output = capsys.readouterr()
+    assert "src/pkg/exports.py:1: __all__ exports private name `_private_helper`" in output.out
 
 
 def test_cli_separates_symbol_and_private_import_findings(

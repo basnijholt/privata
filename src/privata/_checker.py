@@ -112,6 +112,11 @@ def _print_export_issues(export_issues: list[ExportIssue], project_root: Path) -
                 f"  {rel}:{export_issue.lineno}: "
                 f"__all__ exports unknown name `{export_issue.name}`",
             )
+        elif export_issue.kind == "private":
+            print(
+                f"  {rel}:{export_issue.lineno}: "
+                f"__all__ exports private name `{export_issue.name}`",
+            )
         else:
             print(
                 f"  {rel}:{export_issue.lineno}: "
