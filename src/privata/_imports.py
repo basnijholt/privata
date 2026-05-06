@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import ast
 
-from privata._models import Module, PrivateModuleImport
+from privata._models import Module, PrivateModuleImport, PrivateSymbolImport
 
 _SPLIT_MODULE_PART_COUNT = 2
 
@@ -146,6 +146,58 @@ def collect_private_module_imports(modules: dict[str, Module]) -> list[PrivateMo
     return sorted(
         findings.values(),
         key=lambda item: (str(item.imported_by_path), item.lineno, item.module),
+    )
+
+
+def collect_private_symbol_imports(modules: dict[str, Module]) -> list[PrivateSymbolImport]:
+    """Return private top-level symbols imported from another production module."""
+    private_symbols = {
+        module_name: {symbol.name: symbol for symbol in module.private_symbols}
+        for module_name, module in modules.items()
+        if module.private_symbols
+    }
+    findings: dict[tuple[str, str, str, int], PrivateSymbolImport] = {}
+
+    def record(source: str, name: str, consumer: Module, lineno: int) -> None:
+        if source == consumer.name:
+            return
+        symbol = private_symbols[source][name]
+        findings.setdefault(
+            (source, name, consumer.name, lineno),
+            PrivateSymbolImport(
+                module=source,
+                name=name,
+                path=symbol.path,
+                imported_by=consumer.name,
+                imported_by_path=consumer.path,
+                lineno=lineno,
+            ),
+        )
+
+    for consumer in modules.values():
+        if consumer.tree is None:
+            continue
+
+        for node in ast.walk(consumer.tree):
+            if not isinstance(node, ast.ImportFrom):
+                continue
+
+            source = _resolve_relative_import(
+                consumer.package_parts,
+                node.level or 0,
+                node.module,
+            )
+            if source is None or source not in private_symbols:
+                continue
+
+            for alias in node.names:
+                name = alias.name
+                if name != "*" and name in private_symbols[source]:
+                    record(source, name, consumer, node.lineno)
+
+    return sorted(
+        findings.values(),
+        key=lambda item: (str(item.imported_by_path), item.lineno, item.module, item.name),
     )
 
 

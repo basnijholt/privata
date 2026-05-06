@@ -7,10 +7,19 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from privata import find_export_issues, find_private_candidates, find_private_module_imports
+from privata import (
+    find_export_issues,
+    find_private_candidates,
+    find_private_module_imports,
+    find_private_symbol_imports,
+)
 from privata._checker import main
 from privata._exports import collect_export_issues
-from privata._imports import collect_private_module_imports, find_cross_imports
+from privata._imports import (
+    collect_private_module_imports,
+    collect_private_symbol_imports,
+    find_cross_imports,
+)
 from privata._models import Module
 from privata.cli import main as cli_main
 
@@ -30,6 +39,13 @@ def _symbols(project_root: Path) -> set[tuple[str, str]]:
 def _private_module_imports(project_root: Path) -> set[tuple[str, str]]:
     return {
         (issue.module, issue.imported_by) for issue in find_private_module_imports(project_root)
+    }
+
+
+def _private_symbol_imports(project_root: Path) -> set[tuple[str, str, str]]:
+    return {
+        (issue.module, issue.name, issue.imported_by)
+        for issue in find_private_symbol_imports(project_root)
     }
 
 
@@ -326,6 +342,81 @@ VALUE = _internal.VALUE
 
     private_module_imports = _private_module_imports(tmp_path)
     assert ("pkg.one._internal", "pkg.two.public") in private_module_imports
+
+
+def test_cli_reports_private_symbol_imports(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Private top-level symbols imported by production modules should be flagged."""
+    _write(
+        tmp_path / "src" / "pkg" / "write_coordinator.py",
+        """
+class _EventCacheWriteCoordinator:
+    pass
+
+def local_helper() -> None:
+    pass
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "runtime_support.py",
+        """
+from pkg.write_coordinator import _EventCacheWriteCoordinator
+""".strip()
+        + "\n",
+    )
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr("sys.argv", ["privata", str(tmp_path)])
+        assert main() == 1
+
+    output = capsys.readouterr()
+    assert "Found 1 private symbol imports from production modules:" in output.out
+    assert (
+        "src/pkg/runtime_support.py:1: imports private symbol "
+        "`pkg.write_coordinator._EventCacheWriteCoordinator`"
+    ) in output.out
+    assert "function `local_helper`\n\nFound 1 private symbol imports" in output.out
+
+
+def test_private_symbol_imports_are_reported(tmp_path: Path) -> None:
+    """Private symbol import findings include the source symbol and consumer."""
+    _write(
+        tmp_path / "src" / "pkg" / "producer.py",
+        """
+class _PrivateService:
+    pass
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "consumer.py",
+        """
+from .producer import _PrivateService
+""".strip()
+        + "\n",
+    )
+
+    assert _private_symbol_imports(tmp_path) == {
+        ("pkg.producer", "_PrivateService", "pkg.consumer"),
+    }
+
+
+def test_private_symbol_self_import_is_ignored(tmp_path: Path) -> None:
+    """Self imports do not count as private symbol boundary crossings."""
+    _write(
+        tmp_path / "src" / "pkg" / "producer.py",
+        """
+from .producer import _PrivateService
+
+class _PrivateService:
+    pass
+""".strip()
+        + "\n",
+    )
+
+    assert _private_symbol_imports(tmp_path) == set()
 
 
 def test_private_module_imported_only_by_tests_is_ignored(tmp_path: Path) -> None:
@@ -837,6 +928,7 @@ def test_private_module_import_helpers_ignore_unparsed_modules(tmp_path: Path) -
 
     assert find_cross_imports({"pkg.empty": module}) == set()
     assert collect_private_module_imports({"pkg.empty": module}) == []
+    assert collect_private_symbol_imports({"pkg.empty": module}) == []
 
 
 def test_annotated_framework_constructor_is_skipped(tmp_path: Path) -> None:

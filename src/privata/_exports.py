@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 
 from privata._models import ExportIssue, Module
-from privata._modules import _names_from_target
+from privata._modules import names_from_target
 
 _IGNORED_PUBLIC_BINDINGS = {"logger"}
 
@@ -127,13 +127,13 @@ def _bound_names(node: ast.stmt) -> list[str]:
         names = [
             name
             for target in node.targets
-            for name in _names_from_target(target)
+            for name in names_from_target(target)
             if name != "__all__"
         ]
     elif isinstance(node, ast.AnnAssign):
-        names = _names_from_target(node.target)
+        names = names_from_target(node.target)
     elif hasattr(ast, "TypeAlias") and isinstance(node, ast.TypeAlias):
-        names = _names_from_target(node.name)
+        names = names_from_target(node.name)
     elif isinstance(node, ast.Import):
         names = [alias.asname or alias.name.split(".")[0] for alias in node.names]
     elif isinstance(node, ast.ImportFrom):

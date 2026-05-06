@@ -107,7 +107,7 @@ def collect_modules(source_roots: list[Path]) -> dict[str, Module]:  # noqa: C90
                     if _is_framework_constructor_call(node.value):
                         continue
                     for target in node.targets:
-                        for name in _names_from_target(target):
+                        for name in names_from_target(target):
                             _maybe_add(
                                 mod,
                                 SymbolCandidate(name, "variable", node.lineno),
@@ -117,7 +117,7 @@ def collect_modules(source_roots: list[Path]) -> dict[str, Module]:  # noqa: C90
                 elif isinstance(node, ast.AnnAssign) and node.target:
                     if node.value is not None and _is_framework_constructor_call(node.value):
                         continue
-                    for name in _names_from_target(node.target):
+                    for name in names_from_target(node.target):
                         _maybe_add(
                             mod,
                             SymbolCandidate(name, "variable", node.lineno),
@@ -125,7 +125,7 @@ def collect_modules(source_roots: list[Path]) -> dict[str, Module]:  # noqa: C90
                             ignored_names=framework_related_names,
                         )
                 elif hasattr(ast, "TypeAlias") and isinstance(node, ast.TypeAlias):
-                    for name in _names_from_target(node.name):
+                    for name in names_from_target(node.name):
                         _maybe_add(
                             mod,
                             SymbolCandidate(name, "variable", node.lineno),
@@ -265,13 +265,13 @@ def _strings_from_node(node: ast.expr) -> set[str] | None:
     return None
 
 
-def _names_from_target(node: ast.expr) -> list[str]:
+def names_from_target(node: ast.expr) -> list[str]:
     if isinstance(node, ast.Name):
         return [node.id]
     if isinstance(node, (ast.Tuple, ast.List)):
         result: list[str] = []
         for elt in node.elts:
-            result.extend(_names_from_target(elt))
+            result.extend(names_from_target(elt))
         return result
     return []
 
@@ -285,6 +285,16 @@ def _maybe_add(
 ) -> None:
     name = candidate.name
     if name.startswith("_"):
+        if _is_private_symbol_name(name):
+            mod.private_symbols.append(
+                Symbol(
+                    name=name,
+                    kind=candidate.kind,
+                    lineno=candidate.lineno,
+                    module=mod.name,
+                    path=mod.path,
+                ),
+            )
         return
     if name in _ALLOWED_PUBLIC_NAMES:
         return
@@ -301,3 +311,7 @@ def _maybe_add(
             path=mod.path,
         ),
     )
+
+
+def _is_private_symbol_name(name: str) -> bool:
+    return name.startswith("_") and not (name.startswith("__") and name.endswith("__"))

@@ -66,6 +66,18 @@ package.feature._runtime
 Those modules can be imported from inside their owning package subtree.
 Imports from outside that subtree are reported.
 
+## Private Symbol Imports
+
+Private top-level symbols are functions, classes, variables, or type aliases whose names begin with a single underscore:
+
+```python
+class _RuntimeService:
+    pass
+```
+
+Imports of those names from another production module are reported.
+Tests are ignored, so tests can still import internals without making them public.
+
 ## What Counts As Public Use
 
 The following keep a symbol public:

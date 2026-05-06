@@ -29,6 +29,7 @@ class Module:
     path: Path
     package_parts: tuple[str, ...]
     symbols: list[Symbol] = field(default_factory=list)
+    private_symbols: list[Symbol] = field(default_factory=list)
     tree: ast.Module | None = None
 
 
@@ -37,6 +38,18 @@ class PrivateModuleImport:
     """A private module imported from outside its containing package subtree."""
 
     module: str
+    path: Path
+    imported_by: str
+    imported_by_path: Path
+    lineno: int
+
+
+@dataclass
+class PrivateSymbolImport:
+    """A private top-level symbol imported from another production module."""
+
+    module: str
+    name: str
     path: Path
     imported_by: str
     imported_by_path: Path

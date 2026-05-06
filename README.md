@@ -11,10 +11,11 @@
 Find Python code that looks public but is only used privately.
 
 Privata is a static checker for keeping module boundaries intentional.
-It scans your production Python modules and reports three kinds of interface drift:
+It scans your production Python modules and reports four kinds of interface drift:
 
 - public top-level functions, classes, variables, and type aliases that are only used inside their own module
 - imports of private modules such as `pkg._internal` from outside their owning package subtree
+- imports of private top-level symbols such as `pkg.service._Helper` from another production module
 - literal `__all__` declarations that are stale, incomplete, or exporting names that do not exist
 
 It is designed for packages and applications where `helper()` should become `_helper()` once it is no longer part of the production interface.
@@ -102,6 +103,10 @@ Found 1 private module imports outside their package subtree:
 
   src/example/api.py:3: imports private module `example.worker._runtime`
 
+Found 1 private symbol imports from production modules:
+
+  src/example/api.py:4: imports private symbol `example.worker.runtime._Helper`
+
 Found 1 __all__ export issues:
 
   src/example/__init__.py:5: public name `Service` missing from __all__
@@ -118,6 +123,7 @@ No module privacy issues found.
 - Public top-level functions, classes, variables, and type aliases in production source roots.
 - Whether those symbols are imported by another production module under those roots.
 - Whether private modules such as `pkg._internal` are imported outside their containing package subtree.
+- Whether private top-level symbols are imported from another production module.
 - Whether literal `__all__` declarations exactly match public top-level bindings.
 - Console entry points in `pyproject.toml`.
 - Uvicorn entry points in shell scripts and Dockerfiles.
