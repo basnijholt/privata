@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import runpy
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 
@@ -13,7 +13,6 @@ from privata import (
     find_private_module_imports,
     find_private_symbol_imports,
 )
-from privata._checker import main
 from privata._exports import collect_export_issues
 from privata._imports import (
     collect_private_module_imports,
@@ -22,9 +21,6 @@ from privata._imports import (
 )
 from privata._models import Module
 from privata.cli import main as cli_main
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 def _write(path: Path, content: str) -> None:
@@ -367,9 +363,7 @@ from pkg.write_coordinator import _EventCacheWriteCoordinator
         + "\n",
     )
 
-    with pytest.MonkeyPatch.context() as monkeypatch:
-        monkeypatch.setattr("sys.argv", ["privata", str(tmp_path)])
-        assert main() == 1
+    assert cli_main([str(tmp_path)]) == 1
 
     output = capsys.readouterr()
     assert "Found 1 private symbol imports from production modules:" in output.out
@@ -457,9 +451,8 @@ def helper() -> int:
         + "\n",
     )
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("sys.argv", ["privata"])
 
-    assert main() == 1
+    assert cli_main([]) == 1
     output = capsys.readouterr()
     assert "src/pkg/module.py:1: function `helper`" in output.out
     assert output.err == ""
@@ -1033,13 +1026,10 @@ expose = [2, "OtherFacade"]
 
 def test_cli_reports_no_src_directory(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A project without Python source files is clean instead of requiring src/."""
-    monkeypatch.setattr("sys.argv", ["privata", str(tmp_path)])
-
-    assert main() == 0
+    assert cli_main([str(tmp_path)]) == 0
     output = capsys.readouterr()
     assert output.out == "No module privacy issues found.\n"
     assert output.err == ""
@@ -1179,7 +1169,6 @@ source_roots = [1, "missing"]
 
 def test_cli_reports_clean_project(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A project with no public candidates reports cleanly."""
@@ -1191,9 +1180,7 @@ def _helper() -> int:
 """.strip()
         + "\n",
     )
-    monkeypatch.setattr("sys.argv", ["privata", str(tmp_path)])
-
-    assert main() == 0
+    assert cli_main([str(tmp_path)]) == 0
     output = capsys.readouterr()
     assert output.out == "No module privacy issues found.\n"
     assert output.err == ""
@@ -1201,7 +1188,6 @@ def _helper() -> int:
 
 def test_cli_reports_private_imports_without_symbol_candidates(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Private import findings are printed even when no public symbols are found."""
@@ -1219,9 +1205,7 @@ from pkg.one import _internal
 """.strip()
         + "\n",
     )
-    monkeypatch.setattr("sys.argv", ["privata", str(tmp_path)])
-
-    assert main() == 1
+    assert cli_main([str(tmp_path)]) == 1
     output = capsys.readouterr()
     assert "Found 1 private module imports outside their package subtree:" in output.out
     assert "src/pkg/two/public.py:1: imports private module `pkg.one._internal`" in output.out
@@ -1229,7 +1213,6 @@ from pkg.one import _internal
 
 def test_cli_reports_export_issues_without_symbol_candidates(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Literal ``__all__`` mismatches are printed as their own finding section."""
@@ -1240,9 +1223,7 @@ __all__ = ["MISSING"]
 """.strip()
         + "\n",
     )
-    monkeypatch.setattr("sys.argv", ["privata", str(tmp_path)])
-
-    assert main() == 1
+    assert cli_main([str(tmp_path)]) == 1
     output = capsys.readouterr()
     assert "Found 1 __all__ export issues:" in output.out
     assert "src/pkg/exports.py:1: __all__ exports unknown name `MISSING`" in output.out
@@ -1250,7 +1231,6 @@ __all__ = ["MISSING"]
 
 def test_cli_reports_private_all_exports(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Private names in ``__all__`` should be printed as private export issues."""
@@ -1264,16 +1244,13 @@ def _private_helper() -> None:
 """.strip()
         + "\n",
     )
-    monkeypatch.setattr("sys.argv", ["privata", str(tmp_path)])
-
-    assert main() == 1
+    assert cli_main([str(tmp_path)]) == 1
     output = capsys.readouterr()
     assert "src/pkg/exports.py:1: __all__ exports private name `_private_helper`" in output.out
 
 
 def test_cli_separates_symbol_and_private_import_findings(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A blank line separates symbol and private import sections."""
@@ -1294,16 +1271,13 @@ def local_helper() -> int:
 """.strip()
         + "\n",
     )
-    monkeypatch.setattr("sys.argv", ["privata", str(tmp_path)])
-
-    assert main() == 1
+    assert cli_main([str(tmp_path)]) == 1
     output = capsys.readouterr()
     assert "function `local_helper`\n\nFound 1 private module imports" in output.out
 
 
 def test_cli_separates_export_findings_from_previous_sections(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A blank line separates export findings from earlier finding sections."""
@@ -1317,9 +1291,7 @@ def local_helper() -> int:
 """.strip()
         + "\n",
     )
-    monkeypatch.setattr("sys.argv", ["privata", str(tmp_path)])
-
-    assert main() == 1
+    assert cli_main([str(tmp_path)]) == 1
     output = capsys.readouterr()
     assert "function `local_helper`\n\nFound 2 __all__ export issues" in output.out
 
@@ -1347,10 +1319,6 @@ def _helper() -> int:
     with pytest.raises(SystemExit) as package_exit:
         runpy.run_module("privata", run_name="__main__")
     assert package_exit.value.code == 0
-
-    with pytest.raises(SystemExit) as checker_exit:
-        runpy.run_module("privata._checker", run_name="__main__")
-    assert checker_exit.value.code == 0
 
     with pytest.raises(SystemExit) as cli_exit:
         runpy.run_module("privata.cli", run_name="__main__")
@@ -1388,3 +1356,22 @@ def _helper() -> int:
     output = capsys.readouterr()
     assert output.out == "No module privacy issues found.\n"
     assert output.err == ""
+
+
+@pytest.mark.filterwarnings("ignore:.*found in sys.modules.*:RuntimeWarning")
+def test_checker_module_is_not_runtime_entrypoint(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The internal checker module should not also act as a CLI entrypoint."""
+    runpy.run_module("privata._checker", run_name="__main__")
+
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert output.err == ""
+
+
+def test_privata_is_clean_under_its_own_rules() -> None:
+    """Privata should pass its own public-symbol check."""
+    project_root = Path(__file__).resolve().parents[1]
+
+    assert _symbols(project_root) == set()

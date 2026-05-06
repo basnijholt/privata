@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from privata._entrypoints import collect_external_entrypoints, load_tach_interface_exports
@@ -17,6 +15,8 @@ from privata._modules import collect_modules
 from privata._source_roots import source_roots
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from privata._models import ExportIssue, PrivateModuleImport, PrivateSymbolImport, Symbol
 
 
@@ -105,12 +105,6 @@ def check_project(project_root: Path) -> int:
     return 1
 
 
-def main() -> int:
-    """Legacy entry point: scan project from ``sys.argv``."""
-    project_root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path.cwd()
-    return check_project(project_root)
-
-
 def _print_private_candidates(candidates: list[Symbol], project_root: Path) -> None:
     print(f"Found {len(candidates)} public symbols that could be made private:\n")
     for symbol in candidates:
@@ -166,7 +160,3 @@ def _print_export_issues(export_issues: list[ExportIssue], project_root: Path) -
                 f"  {rel}:{export_issue.lineno}: "
                 f"public name `{export_issue.name}` missing from __all__",
             )
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
