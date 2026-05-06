@@ -1355,3 +1355,36 @@ def _helper() -> int:
     with pytest.raises(SystemExit) as cli_exit:
         runpy.run_module("privata.cli", run_name="__main__")
     assert cli_exit.value.code == 0
+
+
+def test_cli_uses_argparse_for_help(capsys: pytest.CaptureFixture[str]) -> None:
+    """The console wrapper should expose argparse help without running checks."""
+    with pytest.raises(SystemExit) as cli_exit:
+        cli_main(["--help"])
+
+    assert cli_exit.value.code == 0
+    output = capsys.readouterr()
+    assert output.out.startswith("usage: privata")
+    assert "project-root" in output.out
+    assert "No module privacy issues found." not in output.out
+    assert output.err == ""
+
+
+def test_cli_accepts_explicit_argv(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The argparse wrapper accepts an argv sequence for tests and embedding."""
+    _write(
+        tmp_path / "src" / "pkg" / "module.py",
+        """
+def _helper() -> int:
+    return 1
+""".strip()
+        + "\n",
+    )
+
+    assert cli_main([str(tmp_path)]) == 0
+    output = capsys.readouterr()
+    assert output.out == "No module privacy issues found.\n"
+    assert output.err == ""

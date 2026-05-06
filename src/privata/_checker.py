@@ -68,9 +68,9 @@ def find_export_issues(project_root: Path) -> list[ExportIssue]:
     return export_issues
 
 
-def main() -> int:
-    """Entry point: scan project and report module-local public symbols."""
-    project_root = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path.cwd()
+def check_project(project_root: Path) -> int:
+    """Scan project and report module-local public symbols."""
+    project_root = project_root.resolve()
     candidates, private_module_imports, private_symbol_imports, export_issues = (
         _collect_privacy_findings(project_root)
     )
@@ -103,6 +103,12 @@ def main() -> int:
         _print_export_issues(export_issues, project_root)
 
     return 1
+
+
+def main() -> int:
+    """Legacy entry point: scan project from ``sys.argv``."""
+    project_root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path.cwd()
+    return check_project(project_root)
 
 
 def _print_private_candidates(candidates: list[Symbol], project_root: Path) -> None:
