@@ -1370,6 +1370,262 @@ def test_checker_module_is_not_runtime_entrypoint(
     assert output.err == ""
 
 
+def test_plain_import_chained_attribute_access_is_detected(tmp_path: Path) -> None:
+    """import pkg.mod followed by pkg.mod.Symbol should count as cross-module usage."""
+    _write(
+        tmp_path / "src" / "provider" / "module.py",
+        """
+def get_value() -> int:
+    return 1
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "src" / "consumer" / "module.py",
+        """
+import provider.module
+
+result = provider.module.get_value()
+""".strip()
+        + "\n",
+    )
+
+    assert ("provider.module", "get_value") not in _symbols(tmp_path)
+
+
+def test_plain_import_deeply_chained_attribute_access_is_detected(tmp_path: Path) -> None:
+    """import a.b.c.mod followed by a.b.c.mod.Symbol should count as cross-module usage."""
+    _write(
+        tmp_path / "src" / "pkg" / "sub" / "leaf.py",
+        """
+def get_value() -> int:
+    return 1
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "src" / "consumer" / "module.py",
+        """
+import pkg.sub.leaf
+
+result = pkg.sub.leaf.get_value()
+""".strip()
+        + "\n",
+    )
+
+    assert ("pkg.sub.leaf", "get_value") not in _symbols(tmp_path)
+
+
+def test_aliased_plain_import_attribute_access_is_detected(tmp_path: Path) -> None:
+    """import pkg.mod as m followed by m.Symbol should count as cross-module usage."""
+    _write(
+        tmp_path / "src" / "provider" / "module.py",
+        """
+def get_value() -> int:
+    return 1
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "src" / "consumer" / "module.py",
+        """
+import provider.module as m
+
+result = m.get_value()
+""".strip()
+        + "\n",
+    )
+
+    assert ("provider.module", "get_value") not in _symbols(tmp_path)
+
+
+def test_aliased_deep_plain_import_attribute_access_is_detected(tmp_path: Path) -> None:
+    """import a.b.c.mod as m followed by m.Symbol should count as cross-module usage."""
+    _write(
+        tmp_path / "src" / "pkg" / "sub" / "leaf.py",
+        """
+def get_value() -> int:
+    return 1
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "src" / "consumer" / "module.py",
+        """
+import pkg.sub.leaf as leaf
+
+result = leaf.get_value()
+""".strip()
+        + "\n",
+    )
+
+    assert ("pkg.sub.leaf", "get_value") not in _symbols(tmp_path)
+
+
+def test_from_submodule_import_attribute_access_is_detected(tmp_path: Path) -> None:
+    """from pkg import mod followed by mod.Symbol should count as cross-module usage."""
+    _write(
+        tmp_path / "src" / "provider" / "module.py",
+        """
+def get_value() -> int:
+    return 1
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "src" / "consumer" / "module.py",
+        """
+from provider import module
+
+result = module.get_value()
+""".strip()
+        + "\n",
+    )
+
+    assert ("provider.module", "get_value") not in _symbols(tmp_path)
+
+
+def test_from_submodule_aliased_import_attribute_access_is_detected(tmp_path: Path) -> None:
+    """from pkg import mod as m followed by m.Symbol should count as cross-module usage."""
+    _write(
+        tmp_path / "src" / "provider" / "module.py",
+        """
+def get_value() -> int:
+    return 1
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "src" / "consumer" / "module.py",
+        """
+from provider import module as m
+
+result = m.get_value()
+""".strip()
+        + "\n",
+    )
+
+    assert ("provider.module", "get_value") not in _symbols(tmp_path)
+
+
+def test_plain_import_chained_class_and_variable_attribute_access_is_detected(
+    tmp_path: Path,
+) -> None:
+    """import pkg.mod followed by pkg.mod.SomeClass and pkg.mod.GLOBAL should count as usage."""
+    _write(
+        tmp_path / "src" / "provider" / "module.py",
+        """
+class SomeClass:
+    pass
+
+GLOBAL_VALUE = 42
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "src" / "consumer" / "module.py",
+        """
+import provider.module
+
+x = provider.module.SomeClass()
+y = provider.module.GLOBAL_VALUE
+""".strip()
+        + "\n",
+    )
+
+    symbols = _symbols(tmp_path)
+    assert ("provider.module", "SomeClass") not in symbols
+    assert ("provider.module", "GLOBAL_VALUE") not in symbols
+
+
+def test_aliased_import_class_and_variable_attribute_access_is_detected(
+    tmp_path: Path,
+) -> None:
+    """import pkg.mod as m followed by m.SomeClass and m.GLOBAL should count as usage."""
+    _write(
+        tmp_path / "src" / "provider" / "module.py",
+        """
+class SomeClass:
+    pass
+
+GLOBAL_VALUE = 42
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "src" / "consumer" / "module.py",
+        """
+import provider.module as m
+
+x = m.SomeClass()
+y = m.GLOBAL_VALUE
+""".strip()
+        + "\n",
+    )
+
+    symbols = _symbols(tmp_path)
+    assert ("provider.module", "SomeClass") not in symbols
+    assert ("provider.module", "GLOBAL_VALUE") not in symbols
+
+
+def test_from_import_class_and_variable_attribute_access_is_detected(tmp_path: Path) -> None:
+    """from pkg import mod followed by mod.SomeClass and mod.GLOBAL should count as usage."""
+    _write(
+        tmp_path / "src" / "provider" / "module.py",
+        """
+class SomeClass:
+    pass
+
+GLOBAL_VALUE = 42
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "src" / "consumer" / "module.py",
+        """
+from provider import module
+
+x = module.SomeClass()
+y = module.GLOBAL_VALUE
+""".strip()
+        + "\n",
+    )
+
+    symbols = _symbols(tmp_path)
+    assert ("provider.module", "SomeClass") not in symbols
+    assert ("provider.module", "GLOBAL_VALUE") not in symbols
+
+
+def test_from_aliased_import_class_and_variable_attribute_access_is_detected(
+    tmp_path: Path,
+) -> None:
+    """from pkg import mod as m followed by m.SomeClass and m.GLOBAL should count as usage."""
+    _write(
+        tmp_path / "src" / "provider" / "module.py",
+        """
+class SomeClass:
+    pass
+
+GLOBAL_VALUE = 42
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "src" / "consumer" / "module.py",
+        """
+from provider import module as m
+
+x = m.SomeClass()
+y = m.GLOBAL_VALUE
+""".strip()
+        + "\n",
+    )
+
+    symbols = _symbols(tmp_path)
+    assert ("provider.module", "SomeClass") not in symbols
+    assert ("provider.module", "GLOBAL_VALUE") not in symbols
+
+
 def test_privata_is_clean_under_its_own_rules() -> None:
     """Privata should pass its own public-symbol check."""
     project_root = Path(__file__).resolve().parents[1]

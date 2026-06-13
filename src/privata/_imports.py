@@ -9,6 +9,18 @@ from privata._models import Module, PrivateModuleImport, PrivateSymbolImport
 _SPLIT_MODULE_PART_COUNT = 2
 
 
+def _dotted_name(node: ast.expr) -> str | None:
+    """Resolve a chained attribute expression to a dotted string, or None."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        parent = _dotted_name(node.value)
+        if parent is None:
+            return None
+        return f"{parent}.{node.attr}"
+    return None
+
+
 def _is_private_module_name(module_name: str) -> bool:
     """Return whether any segment of a dotted module path is private."""
     return any(part.startswith("_") for part in module_name.split("."))
@@ -92,18 +104,21 @@ def find_cross_imports(modules: dict[str, Module]) -> set[tuple[str, str]]:  # n
         for node in ast.walk(consumer.tree):
             if not isinstance(node, ast.Attribute):
                 continue
-            if not isinstance(node.value, ast.Name):
-                continue
-            obj_name = node.value.id
             attr = node.attr
-            aliased_module = import_aliases.get(obj_name)
-            if (
-                aliased_module
-                and aliased_module != consumer_name
-                and aliased_module in defined
-                and attr in defined[aliased_module]
-            ):
-                used.add((aliased_module, attr))
+            base = _dotted_name(node.value)
+            if base is None:
+                continue
+            if base in defined and base != consumer_name and attr in defined[base]:
+                used.add((base, attr))
+            else:
+                aliased_module = import_aliases.get(base)
+                if (
+                    aliased_module
+                    and aliased_module != consumer_name
+                    and aliased_module in defined
+                    and attr in defined[aliased_module]
+                ):
+                    used.add((aliased_module, attr))
 
     return used
 
