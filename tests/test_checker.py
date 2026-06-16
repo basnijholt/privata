@@ -1370,6 +1370,48 @@ def test_checker_module_is_not_runtime_entrypoint(
     assert output.err == ""
 
 
+def test_privata_ignore_suppresses_bare_private_module_import(tmp_path: Path) -> None:
+    """A # privata: ignore comment on a bare import statement suppresses the finding."""
+    _write(
+        tmp_path / "src" / "pkg" / "one" / "_internal.py",
+        "VALUE = 1\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "two" / "public.py",
+        "import pkg.one._internal  # privata: ignore\n",
+    )
+
+    assert _private_module_imports(tmp_path) == set()
+
+
+def test_privata_ignore_suppresses_from_private_module_import(tmp_path: Path) -> None:
+    """A # privata: ignore comment on a from-import suppresses a private module finding."""
+    _write(
+        tmp_path / "src" / "pkg" / "one" / "_internal.py",
+        "VALUE = 1\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "two" / "public.py",
+        "from pkg.one import _internal  # privata: ignore\n",
+    )
+
+    assert _private_module_imports(tmp_path) == set()
+
+
+def test_privata_ignore_suppresses_private_symbol_import(tmp_path: Path) -> None:
+    """A # privata: ignore comment on a from-import suppresses a private symbol finding."""
+    _write(
+        tmp_path / "src" / "pkg" / "producer.py",
+        "class _PrivateService:\n    pass\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "consumer.py",
+        "from .producer import _PrivateService  # privata: ignore\n",
+    )
+
+    assert _private_symbol_imports(tmp_path) == set()
+
+
 def test_privata_is_clean_under_its_own_rules() -> None:
     """Privata should pass its own public-symbol check."""
     project_root = Path(__file__).resolve().parents[1]
