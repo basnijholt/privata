@@ -9,6 +9,7 @@ import pytest
 
 from privata import (
     find_export_issues,
+    find_module_collisions,
     find_private_candidates,
     find_private_module_imports,
     find_private_symbol_imports,
@@ -47,6 +48,13 @@ def _private_symbol_imports(project_root: Path) -> set[tuple[str, str, str]]:
 
 def _export_issues(project_root: Path) -> set[tuple[str, str, str]]:
     return {(issue.module, issue.name, issue.kind) for issue in find_export_issues(project_root)}
+
+
+def _module_collisions(project_root: Path) -> dict[str, list[str]]:
+    return {
+        collision.module: [path.relative_to(project_root).as_posix() for path in collision.paths]
+        for collision in find_module_collisions(project_root)
+    }
 
 
 def test_fastapi_route_functions_and_models_are_skipped(tmp_path: Path) -> None:
@@ -1971,3 +1979,92 @@ def test_test_source_root_partially_consumed_symbols(tmp_path: Path) -> None:
     symbols = _symbols(tmp_path)
     assert ("something", "get_value") not in symbols
     assert ("something", "get_bar") in symbols
+
+
+def test_module_name_collision_across_source_roots(tmp_path: Path) -> None:
+    """Two source roots defining the same module name should be reported."""
+    _write(
+        tmp_path / "src" / "utils.py",
+        "def production_helper() -> int:\n    return 1\n",
+    )
+    _write(
+        tmp_path / "tests" / "utils.py",
+        "def test_helper() -> int:\n    return 2\n",
+    )
+    _write(
+        tmp_path / "tach.toml",
+        'source_roots = ["src", "tests"]\n',
+    )
+    assert _module_collisions(tmp_path) == {"utils": ["src/utils.py", "tests/utils.py"]}
+
+
+def test_module_and_package_collision_in_same_root(tmp_path: Path) -> None:
+    """A module next to a same-named package is ambiguous and should be reported."""
+    _write(
+        tmp_path / "src" / "pkg.py",
+        "def helper() -> int:\n    return 1\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "__init__.py",
+        "",
+    )
+    assert _module_collisions(tmp_path) == {"pkg": ["src/pkg/__init__.py", "src/pkg.py"]}
+
+
+def test_distinct_module_names_have_no_collisions(tmp_path: Path) -> None:
+    """Distinct module names across roots should not be reported, and test files never count."""
+    _write(
+        tmp_path / "src" / "utils.py",
+        "def production_helper() -> int:\n    return 1\n",
+    )
+    _write(
+        tmp_path / "tests" / "helper.py",
+        "def test_helper() -> int:\n    return 2\n",
+    )
+    _write(
+        tmp_path / "tests" / "utils_test.py",
+        "def utils() -> int:\n    return 3\n",
+    )
+    _write(
+        tmp_path / "tach.toml",
+        'source_roots = ["src", "tests"]\n',
+    )
+    assert _module_collisions(tmp_path) == {}
+
+
+def test_duplicate_source_roots_are_not_collisions(tmp_path: Path) -> None:
+    """Listing the same source root twice must not report a file as colliding with itself."""
+    _write(
+        tmp_path / "src" / "utils.py",
+        "def production_helper() -> int:\n    return 1\n",
+    )
+    _write(
+        tmp_path / "tach.toml",
+        'source_roots = ["src", "src"]\n',
+    )
+    assert _module_collisions(tmp_path) == {}
+
+
+def test_cli_reports_module_collisions_before_other_findings(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Collisions are printed as their own section ahead of symbol candidates."""
+    _write(
+        tmp_path / "src" / "utils.py",
+        "def production_helper() -> int:\n    return 1\n",
+    )
+    _write(
+        tmp_path / "tests" / "utils.py",
+        "def unused() -> int:\n    return 2\n",
+    )
+    _write(
+        tmp_path / "tach.toml",
+        'source_roots = ["src", "tests"]\n',
+    )
+    assert cli_main([str(tmp_path)]) == 1
+    output = capsys.readouterr()
+    assert "Found 1 module names defined by multiple files" in output.out
+    assert "module `utils` is defined by: src/utils.py, tests/utils.py" in output.out
+    assert "public symbols that could be made private" in output.out
+    assert output.out.index("defined by multiple files") < output.out.index("could be made private")

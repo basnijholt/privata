@@ -35,6 +35,14 @@ class Module:
 
 
 @dataclass
+class ModuleCollision:
+    """A module name that resolves to more than one file across source roots."""
+
+    module: str
+    paths: list[Path]
+
+
+@dataclass
 class PrivateModuleImport:
     """A private module imported from outside its containing package subtree."""
 

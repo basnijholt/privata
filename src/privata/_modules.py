@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from typing import TYPE_CHECKING
 
-from privata._models import Module, Symbol, SymbolCandidate
+from privata._models import Module, ModuleCollision, Symbol, SymbolCandidate
 from privata._source_roots import (
     is_in_ignored_directory,
     is_test_module_filename,
@@ -150,6 +150,30 @@ def collect_modules(source_roots: list[Path]) -> dict[str, Module]:  # noqa: C90
             modules[mod_name] = mod
 
     return modules
+
+
+def collect_module_collisions(source_roots: list[Path]) -> list[ModuleCollision]:
+    """Return module names that resolve to more than one production source file.
+
+    Two files mapping to the same dotted name (e.g. ``src/utils.py`` and
+    ``tests/utils.py``, or ``pkg.py`` next to ``pkg/__init__.py``) are ambiguous at
+    import time, and only one of them can be scanned. Files are not parsed here: a
+    file with broken syntax still occupies its module name.
+    """
+    paths_by_name: dict[str, set[Path]] = {}
+    for source_root in source_roots:
+        for py_file in sorted(source_root.rglob("*.py")):
+            if should_skip_source_file(py_file, source_root):
+                continue
+            mod_name = _module_name_from_path(py_file, source_root)
+            if mod_name is None:
+                continue
+            paths_by_name.setdefault(mod_name, set()).add(py_file)
+    return [
+        ModuleCollision(module=name, paths=sorted(paths))
+        for name, paths in sorted(paths_by_name.items())
+        if len(paths) > 1
+    ]
 
 
 def collect_test_consumers(test_source_roots: list[Path]) -> dict[str, Module]:

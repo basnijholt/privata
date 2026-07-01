@@ -129,6 +129,7 @@ No module privacy issues found.
 - Uvicorn entry points in shell scripts and Dockerfiles.
 - Symbols exported through package `__init__.py` and `__all__`.
 - Tach `[[interfaces]]` entries, when `tach.toml` is present.
+- Module names defined by more than one file across source roots (e.g. `src/utils.py` next to `tests/utils.py`, or `pkg.py` next to `pkg/__init__.py`). Such names are ambiguous at import time and only one file per name can be scanned, so Privata reports the collision instead of silently picking one.
 
 Privata intentionally ignores imports from `tests/`.
 If only tests import a symbol, Privata treats that symbol as private.
