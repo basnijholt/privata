@@ -12,7 +12,7 @@ from privata._imports import (
     find_cross_imports,
 )
 from privata._modules import collect_modules, collect_test_consumers
-from privata._source_roots import source_roots
+from privata._source_roots import is_test_source_root, source_roots
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -27,7 +27,19 @@ def _collect_privacy_findings(
     roots = source_roots(project_root)
     modules = collect_modules(roots)
     test_consumers = collect_test_consumers(roots)
-    cross_imports = find_cross_imports(modules, test_consumers)
+    cross_imports = find_cross_imports(modules)
+    for root in roots:
+        if not is_test_source_root(root):
+            continue
+        root_modules = {
+            name: module for name, module in modules.items() if module.path.is_relative_to(root)
+        }
+        root_consumers = {
+            name: module
+            for name, module in test_consumers.items()
+            if module.path.is_relative_to(root)
+        }
+        cross_imports.update(find_cross_imports(root_modules, root_consumers))
     external_entrypoints = collect_external_entrypoints(project_root)
     public_interface_exports = load_tach_interface_exports(project_root)
 

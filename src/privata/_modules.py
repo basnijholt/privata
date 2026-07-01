@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import ast
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from privata._models import Module, Symbol, SymbolCandidate
-from privata._source_roots import is_test_module_filename, is_test_source_root, should_skip_source_file, should_skip_test_consumer
+from privata._source_roots import (
+    is_test_module_filename,
+    is_test_source_root,
+    should_skip_source_file,
+    should_skip_test_consumer,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -160,8 +165,7 @@ def collect_test_consumers(source_roots: list[Path]) -> dict[str, Module]:
                 continue
             if should_skip_test_consumer(py_file, source_root):
                 continue
-            mod_name = _module_name_from_path(py_file, source_root)
-            assert mod_name is not None
+            mod_name = cast("str", _module_name_from_path(py_file, source_root))
             source = py_file.read_text(encoding="utf-8")
             try:
                 tree = ast.parse(source, filename=str(py_file))

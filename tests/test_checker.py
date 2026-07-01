@@ -1904,6 +1904,26 @@ def test_test_source_root_consumers_count_for_publicness(tmp_path: Path) -> None
     assert ("something", "get_value") not in _symbols(tmp_path)
 
 
+def test_test_source_root_consumers_do_not_count_for_production_modules(
+    tmp_path: Path,
+) -> None:
+    """Test source roots must not make production symbols public."""
+    _write(
+        tmp_path / "src" / "pkg" / "module.py",
+        "def helper() -> int:\n    return 1\n",
+    )
+    _write(
+        tmp_path / "tests" / "test_module.py",
+        "from pkg.module import helper\n",
+    )
+    _write(
+        tmp_path / "tach.toml",
+        'source_roots = ["src", "tests"]\n',
+    )
+
+    assert ("pkg.module", "helper") in _symbols(tmp_path)
+
+
 def test_camelcase_test_files_do_not_count_as_consumers(tmp_path: Path) -> None:
     """camelCase test filenames should not keep production symbols public."""
     _write(

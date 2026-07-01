@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import tomllib
 import re
+import tomllib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
