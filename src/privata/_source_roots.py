@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import tomllib
 from typing import TYPE_CHECKING
 
@@ -25,8 +26,12 @@ _IGNORED_SOURCE_DIR_NAMES = {
 }
 
 
-def _is_test_module_filename(name: str) -> bool:
-    return name.startswith("test_") or name.endswith("_test.py")
+_TEST_FILENAME_RE = re.compile(r"(?:test_\w+|\w+_test|test[A-Z]\w*|\w+Test)\.py")
+
+
+def is_test_module_filename(name: str) -> bool:
+    """Return whether a filename matches a recognised test-file naming convention."""
+    return bool(_TEST_FILENAME_RE.fullmatch(name))
 
 
 def _src_dir(project_root: Path) -> Path | None:
@@ -71,11 +76,18 @@ def source_roots(project_root: Path) -> list[Path]:
 
 def should_skip_source_file(py_file: Path, source_root: Path) -> bool:
     """Return whether a Python file should be ignored as non-production source."""
-    if _is_test_module_filename(py_file.name):
-        return True
+    return is_test_module_filename(py_file.name) or is_in_ignored_directory(py_file, source_root)
 
+
+def is_in_ignored_directory(py_file: Path, source_root: Path) -> bool:
+    """Return whether a file sits inside an ignored or hidden directory."""
     rel_parts = py_file.relative_to(source_root).parts
     return any(
         part in _IGNORED_SOURCE_DIR_NAMES or (part.startswith(".") and part != ".")
         for part in rel_parts[:-1]
     )
+
+
+def is_test_source_root(source_root: Path) -> bool:
+    """Return whether a source root is itself a test directory by name."""
+    return source_root.name in _IGNORED_SOURCE_DIR_NAMES

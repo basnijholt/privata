@@ -73,15 +73,24 @@ def _resolve_relative_import(
     return ".".join(base) if base else None
 
 
-def find_cross_imports(modules: dict[str, Module]) -> set[tuple[str, str]]:  # noqa: C901, PLR0912
-    """Return pairs that are imported by another production source module."""
+def find_cross_imports(  # noqa: C901, PLR0912
+    modules: dict[str, Module],
+    consumers: dict[str, Module] | None = None,
+) -> set[tuple[str, str]]:
+    """Return symbols of ``modules`` that another module imports or uses.
+
+    Imports are scanned in ``consumers``, which defaults to ``modules`` themselves.
+    """
     known = set(modules)
     used: set[tuple[str, str]] = set()
     defined = {
         mod_name: {symbol.name for symbol in mod.symbols} for mod_name, mod in modules.items()
     }
 
-    for consumer_name, consumer in modules.items():
+    if consumers is None:
+        consumers = modules
+
+    for consumer_name, consumer in consumers.items():
         if consumer.tree is None:
             continue
 

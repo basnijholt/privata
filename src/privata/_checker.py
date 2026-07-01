@@ -11,21 +11,53 @@ from privata._imports import (
     collect_private_symbol_imports,
     find_cross_imports,
 )
-from privata._modules import collect_modules
-from privata._source_roots import source_roots
+from privata._modules import collect_modules, collect_test_consumers
+from privata._source_roots import is_test_source_root, source_roots
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from privata._models import ExportIssue, PrivateModuleImport, PrivateSymbolImport, Symbol
+    from privata._models import (
+        ExportIssue,
+        Module,
+        PrivateModuleImport,
+        PrivateSymbolImport,
+        Symbol,
+    )
+
+
+def _test_helper_cross_imports(
+    roots: list[Path],
+    modules: dict[str, Module],
+) -> set[tuple[str, str]]:
+    """Return helper-module symbols in test source roots that co-located test files use.
+
+    Each pass is scoped to a single test root so that test files can only certify
+    helper modules in their own root, never production symbols.
+    """
+    test_roots = [root for root in roots if is_test_source_root(root)]
+    test_consumers = collect_test_consumers(test_roots)
+    used: set[tuple[str, str]] = set()
+    for root in test_roots:
+        helpers = {
+            name: module for name, module in modules.items() if module.path.is_relative_to(root)
+        }
+        consumers = {
+            name: module
+            for name, module in test_consumers.items()
+            if module.path.is_relative_to(root)
+        }
+        used |= find_cross_imports(helpers, consumers)
+    return used
 
 
 def _collect_privacy_findings(
     project_root: Path,
 ) -> tuple[list[Symbol], list[PrivateModuleImport], list[PrivateSymbolImport], list[ExportIssue]]:
     """Collect public-symbol and private-module boundary findings."""
-    modules = collect_modules(source_roots(project_root))
-    cross_imports = find_cross_imports(modules)
+    roots = source_roots(project_root)
+    modules = collect_modules(roots)
+    cross_imports = find_cross_imports(modules) | _test_helper_cross_imports(roots, modules)
     external_entrypoints = collect_external_entrypoints(project_root)
     public_interface_exports = load_tach_interface_exports(project_root)
 
