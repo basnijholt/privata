@@ -76,9 +76,11 @@ def source_roots(project_root: Path) -> list[Path]:
 
 def should_skip_source_file(py_file: Path, source_root: Path) -> bool:
     """Return whether a Python file should be ignored as non-production source."""
-    if is_test_module_filename(py_file.name):
-        return True
+    return is_test_module_filename(py_file.name) or is_in_ignored_directory(py_file, source_root)
 
+
+def is_in_ignored_directory(py_file: Path, source_root: Path) -> bool:
+    """Return whether a file sits inside an ignored or hidden directory."""
     rel_parts = py_file.relative_to(source_root).parts
     return any(
         part in _IGNORED_SOURCE_DIR_NAMES or (part.startswith(".") and part != ".")
@@ -89,12 +91,3 @@ def should_skip_source_file(py_file: Path, source_root: Path) -> bool:
 def is_test_source_root(source_root: Path) -> bool:
     """Return whether a source root is itself a test directory by name."""
     return source_root.name in _IGNORED_SOURCE_DIR_NAMES
-
-
-def should_skip_test_consumer(py_file: Path, source_root: Path) -> bool:
-    """Return whether a test file should be excluded from consumer scanning."""
-    rel_parts = py_file.relative_to(source_root).parts
-    return any(
-        part in _IGNORED_SOURCE_DIR_NAMES or (part.startswith(".") and part != ".")
-        for part in rel_parts[:-1]
-    )

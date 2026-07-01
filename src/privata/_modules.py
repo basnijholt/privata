@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import ast
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from privata._models import Module, Symbol, SymbolCandidate
 from privata._source_roots import (
+    is_in_ignored_directory,
     is_test_module_filename,
-    is_test_source_root,
     should_skip_source_file,
-    should_skip_test_consumer,
 )
 
 if TYPE_CHECKING:
@@ -153,19 +152,17 @@ def collect_modules(source_roots: list[Path]) -> dict[str, Module]:  # noqa: C90
     return modules
 
 
-def collect_test_consumers(source_roots: list[Path]) -> dict[str, Module]:
-    """Parse test files within test source roots for use as import consumers."""
+def collect_test_consumers(test_source_roots: list[Path]) -> dict[str, Module]:
+    """Parse test files under test source roots for use as import consumers only."""
     consumers: dict[str, Module] = {}
-    for source_root in source_roots:
-        if not is_test_source_root(source_root):
-            continue
+    for source_root in test_source_roots:
         for py_file in sorted(source_root.rglob("*.py")):
-            name = py_file.name
-            if not is_test_module_filename(name):
+            if not is_test_module_filename(py_file.name):
                 continue
-            if should_skip_test_consumer(py_file, source_root):
+            if is_in_ignored_directory(py_file, source_root):
                 continue
-            mod_name = cast("str", _module_name_from_path(py_file, source_root))
+            # Test filenames are never __init__.py, so the name derivation cannot be empty.
+            mod_name = ".".join(py_file.relative_to(source_root).with_suffix("").parts)
             source = py_file.read_text(encoding="utf-8")
             try:
                 tree = ast.parse(source, filename=str(py_file))

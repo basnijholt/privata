@@ -17,7 +17,38 @@ from privata._source_roots import is_test_source_root, source_roots
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from privata._models import ExportIssue, PrivateModuleImport, PrivateSymbolImport, Symbol
+    from privata._models import (
+        ExportIssue,
+        Module,
+        PrivateModuleImport,
+        PrivateSymbolImport,
+        Symbol,
+    )
+
+
+def _test_helper_cross_imports(
+    roots: list[Path],
+    modules: dict[str, Module],
+) -> set[tuple[str, str]]:
+    """Return helper-module symbols in test source roots that co-located test files use.
+
+    Each pass is scoped to a single test root so that test files can only certify
+    helper modules in their own root, never production symbols.
+    """
+    test_roots = [root for root in roots if is_test_source_root(root)]
+    test_consumers = collect_test_consumers(test_roots)
+    used: set[tuple[str, str]] = set()
+    for root in test_roots:
+        helpers = {
+            name: module for name, module in modules.items() if module.path.is_relative_to(root)
+        }
+        consumers = {
+            name: module
+            for name, module in test_consumers.items()
+            if module.path.is_relative_to(root)
+        }
+        used |= find_cross_imports(helpers, consumers)
+    return used
 
 
 def _collect_privacy_findings(
@@ -26,20 +57,7 @@ def _collect_privacy_findings(
     """Collect public-symbol and private-module boundary findings."""
     roots = source_roots(project_root)
     modules = collect_modules(roots)
-    test_consumers = collect_test_consumers(roots)
-    cross_imports = find_cross_imports(modules)
-    for root in roots:
-        if not is_test_source_root(root):
-            continue
-        root_modules = {
-            name: module for name, module in modules.items() if module.path.is_relative_to(root)
-        }
-        root_consumers = {
-            name: module
-            for name, module in test_consumers.items()
-            if module.path.is_relative_to(root)
-        }
-        cross_imports.update(find_cross_imports(root_modules, root_consumers))
+    cross_imports = find_cross_imports(modules) | _test_helper_cross_imports(roots, modules)
     external_entrypoints = collect_external_entrypoints(project_root)
     public_interface_exports = load_tach_interface_exports(project_root)
 
