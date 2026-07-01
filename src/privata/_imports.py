@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import ast
+from typing import TYPE_CHECKING
 
 from privata._models import Module, PrivateModuleImport, PrivateSymbolImport
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 _SPLIT_MODULE_PART_COUNT = 2
 
@@ -181,25 +185,13 @@ def collect_private_symbol_imports(modules: dict[str, Module]) -> list[PrivateSy
             continue
 
         lines = consumer.path.read_text(encoding="utf-8").splitlines()
-        for node in ast.walk(consumer.tree):
-            if not isinstance(node, ast.ImportFrom):
-                continue
-
-            source = _resolve_relative_import(
-                consumer.package_parts,
-                node.level or 0,
-                node.module,
-            )
-            if source is None or source not in private_symbols:
-                continue
-
-            if _has_ignore_comment(lines, node.lineno):
-                continue
-
-            for alias in node.names:
-                name = alias.name
-                if name != "*" and name in private_symbols[source]:
-                    record(source, name, consumer, node.lineno)
+        for source, name, lineno in _find_private_symbol_imports_in_module(
+            consumer,
+            consumer.tree,
+            private_symbols,
+            lines,
+        ):
+            record(source, name, consumer, lineno)
 
     return sorted(
         findings.values(),
@@ -210,6 +202,37 @@ def collect_private_symbol_imports(modules: dict[str, Module]) -> list[PrivateSy
 def _has_ignore_comment(lines: list[str], lineno: int) -> bool:
     """Return True if the source line at lineno (1-indexed) contains # privata: ignore."""
     return "# privata: ignore" in lines[lineno - 1]
+
+
+def _find_private_symbol_imports_in_module(
+    consumer: Module,
+    tree: ast.Module,
+    private_symbols: Mapping[str, Mapping[str, object]],
+    lines: list[str],
+) -> set[tuple[str, str, int]]:
+    findings: set[tuple[str, str, int]] = set()
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+
+        source = _resolve_relative_import(
+            consumer.package_parts,
+            node.level or 0,
+            node.module,
+        )
+        if source is None or source not in private_symbols:
+            continue
+
+        if _has_ignore_comment(lines, node.lineno):
+            continue
+
+        for alias in node.names:
+            name = alias.name
+            if name != "*" and name in private_symbols[source]:
+                findings.add((source, name, node.lineno))
+
+    return findings
 
 
 def _find_private_imports_in_module(
