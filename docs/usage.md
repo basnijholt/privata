@@ -110,6 +110,16 @@ from pkg.impl import _Service  # privata: ignore
 
 The comment suppresses only the finding on that line. Other issues in the same file are still reported.
 
+In multi-line imports, each imported name is reported on its own line, so put the comment on the line of the name you want to suppress.
+A comment on the `from ...` header line only suppresses findings about the imported module itself, not the names inside the parentheses:
+
+```python
+from pkg.impl import (
+    _Service,  # privata: ignore
+    _Helper,  # still reported
+)
+```
+
 ## Framework Exceptions
 
 Privata skips common framework-owned names:

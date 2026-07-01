@@ -51,6 +51,15 @@ def _package_parts(module_name: str, *, is_package_init: bool = False) -> tuple[
     return tuple(parts[0].split("."))
 
 
+def _ignored_lines(source: str) -> frozenset[int]:
+    """Return 1-indexed line numbers carrying a # privata: ignore comment."""
+    return frozenset(
+        lineno
+        for lineno, line in enumerate(source.splitlines(), start=1)
+        if "# privata: ignore" in line
+    )
+
+
 def collect_modules(source_roots: list[Path]) -> dict[str, Module]:  # noqa: C901, PLR0912
     """Parse every production .py under source roots and collect top-level public definitions."""
     modules: dict[str, Module] = {}
@@ -81,6 +90,7 @@ def collect_modules(source_roots: list[Path]) -> dict[str, Module]:  # noqa: C90
                     is_package_init=py_file.name == "__init__.py",
                 ),
                 tree=tree,
+                ignored_lines=_ignored_lines(source),
             )
 
             for node in tree.body:

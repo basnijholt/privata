@@ -10,6 +10,8 @@ from privata._models import Module, PrivateModuleImport, PrivateSymbolImport
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from privata._models import Symbol
+
 _SPLIT_MODULE_PART_COUNT = 2
 
 
@@ -175,12 +177,10 @@ def collect_private_module_imports(modules: dict[str, Module]) -> list[PrivateMo
         if consumer.tree is None:
             continue
 
-        lines = consumer.path.read_text(encoding="utf-8").splitlines()
         for private_module_name, lineno in _find_private_imports_in_module(
             consumer,
             consumer.tree,
             private_modules,
-            lines,
         ):
             record(private_module_name, consumer, lineno)
 
@@ -219,12 +219,10 @@ def collect_private_symbol_imports(modules: dict[str, Module]) -> list[PrivateSy
         if consumer.tree is None:
             continue
 
-        lines = consumer.path.read_text(encoding="utf-8").splitlines()
         for source, name, lineno in _find_private_symbol_imports_in_module(
             consumer,
             consumer.tree,
             private_symbols,
-            lines,
         ):
             record(source, name, consumer, lineno)
 
@@ -234,16 +232,10 @@ def collect_private_symbol_imports(modules: dict[str, Module]) -> list[PrivateSy
     )
 
 
-def _has_ignore_comment(lines: list[str], lineno: int) -> bool:
-    """Return True if the source line at lineno (1-indexed) contains # privata: ignore."""
-    return "# privata: ignore" in lines[lineno - 1]
-
-
 def _find_private_symbol_imports_in_module(
     consumer: Module,
     tree: ast.Module,
-    private_symbols: Mapping[str, Mapping[str, object]],
-    lines: list[str],
+    private_symbols: Mapping[str, Mapping[str, Symbol]],
 ) -> set[tuple[str, str, int]]:
     findings: set[tuple[str, str, int]] = set()
 
@@ -264,7 +256,7 @@ def _find_private_symbol_imports_in_module(
             if (
                 name != "*"
                 and name in private_symbols[source]
-                and not _has_ignore_comment(lines, alias.lineno)
+                and alias.lineno not in consumer.ignored_lines
             ):
                 findings.add((source, name, alias.lineno))
 
@@ -275,22 +267,17 @@ def _find_private_imports_in_module(
     consumer: Module,
     tree: ast.Module,
     private_modules: set[str],
-    lines: list[str],
 ) -> set[tuple[str, int]]:
     findings: set[tuple[str, int]] = set()
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            for name, lineno in _private_imports_from_import(node, private_modules):
-                if not _has_ignore_comment(lines, lineno):
-                    findings.add((name, lineno))
+            findings.update(_private_imports_from_import(node, private_modules))
             continue
         if isinstance(node, ast.ImportFrom):
-            for name, lineno in _private_imports_from_import_from(consumer, node, private_modules):
-                if not _has_ignore_comment(lines, lineno):
-                    findings.add((name, lineno))
+            findings.update(_private_imports_from_import_from(consumer, node, private_modules))
 
-    return findings
+    return {(name, lineno) for name, lineno in findings if lineno not in consumer.ignored_lines}
 
 
 def _private_imports_from_import(
