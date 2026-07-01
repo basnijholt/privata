@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from privata._entrypoints import collect_external_entrypoints, load_tach_interface_exports
 from privata._exports import collect_export_issues
@@ -27,13 +27,15 @@ if TYPE_CHECKING:
         Symbol,
     )
 
-    _Findings = tuple[
-        list[Symbol],
-        list[PrivateModuleImport],
-        list[PrivateSymbolImport],
-        list[ExportIssue],
-        list[ModuleCollision],
-    ]
+
+class _PrivacyFindings(NamedTuple):
+    """All findings produced by one scan of a project."""
+
+    candidates: list[Symbol]
+    private_module_imports: list[PrivateModuleImport]
+    private_symbol_imports: list[PrivateSymbolImport]
+    export_issues: list[ExportIssue]
+    module_collisions: list[ModuleCollision]
 
 
 def _test_helper_cross_imports(
@@ -61,7 +63,7 @@ def _test_helper_cross_imports(
     return used
 
 
-def _collect_privacy_findings(project_root: Path) -> _Findings:
+def _collect_privacy_findings(project_root: Path) -> _PrivacyFindings:
     """Collect public-symbol and private-module boundary findings."""
     roots = source_roots(project_root)
     modules = collect_modules(roots)
@@ -78,68 +80,66 @@ def _collect_privacy_findings(project_root: Path) -> _Findings:
         and (sym.module, sym.name) not in public_interface_exports
     ]
     candidates.sort(key=lambda s: (str(s.path), s.lineno))
-    private_module_imports = collect_private_module_imports(modules)
-    private_symbol_imports = collect_private_symbol_imports(modules)
-    export_issues = collect_export_issues(modules)
-    module_collisions = collect_module_collisions(roots)
-    return (
-        candidates,
-        private_module_imports,
-        private_symbol_imports,
-        export_issues,
-        module_collisions,
+    return _PrivacyFindings(
+        candidates=candidates,
+        private_module_imports=collect_private_module_imports(modules),
+        private_symbol_imports=collect_private_symbol_imports(modules),
+        export_issues=collect_export_issues(modules),
+        module_collisions=collect_module_collisions(roots),
     )
 
 
 def find_private_candidates(project_root: Path) -> list[Symbol]:
     """Find symbols that appear module-local and should be private."""
-    candidates, _, _, _, _ = _collect_privacy_findings(project_root)
-    return candidates
+    return _collect_privacy_findings(project_root).candidates
 
 
 def find_private_module_imports(project_root: Path) -> list[PrivateModuleImport]:
     """Find private modules imported from outside their package subtree."""
-    _, private_module_imports, _, _, _ = _collect_privacy_findings(project_root)
-    return private_module_imports
+    return _collect_privacy_findings(project_root).private_module_imports
 
 
 def find_private_symbol_imports(project_root: Path) -> list[PrivateSymbolImport]:
     """Find private top-level symbols imported from another production module."""
-    _, _, private_symbol_imports, _, _ = _collect_privacy_findings(project_root)
-    return private_symbol_imports
+    return _collect_privacy_findings(project_root).private_symbol_imports
 
 
 def find_export_issues(project_root: Path) -> list[ExportIssue]:
     """Find literal __all__ declarations that are stale or incomplete."""
-    _, _, _, export_issues, _ = _collect_privacy_findings(project_root)
-    return export_issues
+    return _collect_privacy_findings(project_root).export_issues
 
 
 def find_module_collisions(project_root: Path) -> list[ModuleCollision]:
     """Find module names that resolve to more than one file across source roots."""
-    _, _, _, _, module_collisions = _collect_privacy_findings(project_root)
-    return module_collisions
+    return _collect_privacy_findings(project_root).module_collisions
 
 
 def check_project(project_root: Path) -> int:
     """Scan project and report module-local public symbols."""
     project_root = project_root.resolve()
-    candidates, private_module_imports, private_symbol_imports, export_issues, collisions = (
-        _collect_privacy_findings(project_root)
-    )
+    findings = _collect_privacy_findings(project_root)
 
     sections: list[tuple[bool, Callable[[], None]]] = [
-        (bool(collisions), lambda: _print_module_collisions(collisions, project_root)),
-        (bool(candidates), lambda: _print_private_candidates(candidates, project_root)),
         (
-            bool(private_module_imports),
-            lambda: _print_private_module_imports(private_module_imports, project_root),
+            bool(findings.module_collisions),
+            lambda: _print_module_collisions(findings.module_collisions, project_root),
         ),
         (
-            bool(private_symbol_imports),
-            lambda: _print_private_symbol_imports(private_symbol_imports, project_root),
+            bool(findings.candidates),
+            lambda: _print_private_candidates(findings.candidates, project_root),
         ),
-        (bool(export_issues), lambda: _print_export_issues(export_issues, project_root)),
+        (
+            bool(findings.private_module_imports),
+            lambda: _print_private_module_imports(findings.private_module_imports, project_root),
+        ),
+        (
+            bool(findings.private_symbol_imports),
+            lambda: _print_private_symbol_imports(findings.private_symbol_imports, project_root),
+        ),
+        (
+            bool(findings.export_issues),
+            lambda: _print_export_issues(findings.export_issues, project_root),
+        ),
     ]
     printers = [printer for has_findings, printer in sections if has_findings]
     if not printers:
