@@ -3,8 +3,14 @@
 from __future__ import annotations
 
 import ast
+from typing import TYPE_CHECKING
 
 from privata._models import Module, PrivateModuleImport, PrivateSymbolImport
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from privata._models import Symbol
 
 _SPLIT_MODULE_PART_COUNT = 2
 
@@ -213,27 +219,48 @@ def collect_private_symbol_imports(modules: dict[str, Module]) -> list[PrivateSy
         if consumer.tree is None:
             continue
 
-        for node in ast.walk(consumer.tree):
-            if not isinstance(node, ast.ImportFrom):
-                continue
-
-            source = _resolve_relative_import(
-                consumer.package_parts,
-                node.level or 0,
-                node.module,
-            )
-            if source is None or source not in private_symbols:
-                continue
-
-            for alias in node.names:
-                name = alias.name
-                if name != "*" and name in private_symbols[source]:
-                    record(source, name, consumer, node.lineno)
+        for source, name, lineno in _find_private_symbol_imports_in_module(
+            consumer,
+            consumer.tree,
+            private_symbols,
+        ):
+            record(source, name, consumer, lineno)
 
     return sorted(
         findings.values(),
         key=lambda item: (str(item.imported_by_path), item.lineno, item.module, item.name),
     )
+
+
+def _find_private_symbol_imports_in_module(
+    consumer: Module,
+    tree: ast.Module,
+    private_symbols: Mapping[str, Mapping[str, Symbol]],
+) -> set[tuple[str, str, int]]:
+    findings: set[tuple[str, str, int]] = set()
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+
+        source = _resolve_relative_import(
+            consumer.package_parts,
+            node.level or 0,
+            node.module,
+        )
+        if source is None or source not in private_symbols:
+            continue
+
+        for alias in node.names:
+            name = alias.name
+            if (
+                name != "*"
+                and name in private_symbols[source]
+                and alias.lineno not in consumer.ignored_lines
+            ):
+                findings.add((source, name, alias.lineno))
+
+    return findings
 
 
 def _find_private_imports_in_module(
@@ -250,14 +277,14 @@ def _find_private_imports_in_module(
         if isinstance(node, ast.ImportFrom):
             findings.update(_private_imports_from_import_from(consumer, node, private_modules))
 
-    return findings
+    return {(name, lineno) for name, lineno in findings if lineno not in consumer.ignored_lines}
 
 
 def _private_imports_from_import(
     node: ast.Import,
     private_modules: set[str],
 ) -> set[tuple[str, int]]:
-    return {(alias.name, node.lineno) for alias in node.names if alias.name in private_modules}
+    return {(alias.name, alias.lineno) for alias in node.names if alias.name in private_modules}
 
 
 def _private_imports_from_import_from(
@@ -278,7 +305,7 @@ def _private_imports_from_import_from(
         findings.add((source, node.lineno))
 
     findings.update(
-        (f"{source}.{alias.name}", node.lineno)
+        (f"{source}.{alias.name}", alias.lineno)
         for alias in node.names
         if alias.name != "*" and f"{source}.{alias.name}" in private_modules
     )

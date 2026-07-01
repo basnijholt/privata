@@ -98,6 +98,28 @@ Names listed in `__all__` must be bound by the module.
 Public top-level bindings must be listed in `__all__`.
 Use underscore-prefixed imports or helpers for implementation details that should not be exported.
 
+## Suppressing Findings
+
+Add a `# privata: ignore` comment to any import line to suppress that specific finding:
+
+```python
+from pkg._internal import helper  # privata: ignore
+import pkg._internal  # privata: ignore
+from pkg.impl import _Service  # privata: ignore
+```
+
+The comment suppresses only the finding on that line. Other issues in the same file are still reported.
+
+In multi-line imports, each imported name is reported on its own line, so put the comment on the line of the name you want to suppress.
+A comment on the `from ...` header line only suppresses findings about the imported module itself, not the names inside the parentheses:
+
+```python
+from pkg.impl import (
+    _Service,  # privata: ignore
+    _Helper,  # still reported
+)
+```
+
 ## Framework Exceptions
 
 Privata skips common framework-owned names:

@@ -31,6 +31,7 @@ class Module:
     symbols: list[Symbol] = field(default_factory=list)
     private_symbols: list[Symbol] = field(default_factory=list)
     tree: ast.Module | None = None
+    ignored_lines: frozenset[int] = frozenset()
 
 
 @dataclass
