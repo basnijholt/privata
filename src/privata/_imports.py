@@ -259,13 +259,14 @@ def _find_private_symbol_imports_in_module(
         if source is None or source not in private_symbols:
             continue
 
-        if _has_ignore_comment(lines, node.lineno):
-            continue
-
         for alias in node.names:
             name = alias.name
-            if name != "*" and name in private_symbols[source]:
-                findings.add((source, name, node.lineno))
+            if (
+                name != "*"
+                and name in private_symbols[source]
+                and not _has_ignore_comment(lines, alias.lineno)
+            ):
+                findings.add((source, name, alias.lineno))
 
     return findings
 
@@ -296,7 +297,7 @@ def _private_imports_from_import(
     node: ast.Import,
     private_modules: set[str],
 ) -> set[tuple[str, int]]:
-    return {(alias.name, node.lineno) for alias in node.names if alias.name in private_modules}
+    return {(alias.name, alias.lineno) for alias in node.names if alias.name in private_modules}
 
 
 def _private_imports_from_import_from(
@@ -317,7 +318,7 @@ def _private_imports_from_import_from(
         findings.add((source, node.lineno))
 
     findings.update(
-        (f"{source}.{alias.name}", node.lineno)
+        (f"{source}.{alias.name}", alias.lineno)
         for alias in node.names
         if alias.name != "*" and f"{source}.{alias.name}" in private_modules
     )

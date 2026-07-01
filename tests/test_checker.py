@@ -1412,6 +1412,102 @@ def test_privata_ignore_suppresses_private_symbol_import(tmp_path: Path) -> None
     assert _private_symbol_imports(tmp_path) == set()
 
 
+def test_privata_ignore_suppresses_one_multiline_private_symbol_import(
+    tmp_path: Path,
+) -> None:
+    """In multi-line imports, # privata: ignore applies to the alias line."""
+    _write(
+        tmp_path / "src" / "pkg" / "producer.py",
+        """
+class _IgnoredService:
+    pass
+
+class _ReportedService:
+    pass
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "consumer.py",
+        """
+from .producer import (
+    _IgnoredService,  # privata: ignore
+    _ReportedService,
+)
+""".strip()
+        + "\n",
+    )
+
+    assert _private_symbol_imports(tmp_path) == {
+        ("pkg.producer", "_ReportedService", "pkg.consumer"),
+    }
+
+
+def test_privata_ignore_suppresses_one_multiline_private_submodule_import(
+    tmp_path: Path,
+) -> None:
+    """In multi-line from-imports, # privata: ignore applies per private submodule alias."""
+    _write(tmp_path / "src" / "pkg" / "one" / "_ignored.py", "VALUE = 1\n")
+    _write(tmp_path / "src" / "pkg" / "one" / "_reported.py", "VALUE = 2\n")
+    _write(
+        tmp_path / "src" / "pkg" / "two" / "public.py",
+        """
+from pkg.one import (
+    _ignored,  # privata: ignore
+    _reported,
+)
+""".strip()
+        + "\n",
+    )
+
+    assert _private_module_imports(tmp_path) == {
+        ("pkg.one._reported", "pkg.two.public"),
+    }
+
+
+def test_privata_ignore_on_multiline_header_keeps_private_symbol_findings(
+    tmp_path: Path,
+) -> None:
+    """In multi-line imports, header comments do not suppress alias findings."""
+    _write(
+        tmp_path / "src" / "pkg" / "producer.py",
+        "class _PrivateService:\n    pass\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "consumer.py",
+        """
+from .producer import (  # privata: ignore
+    _PrivateService,
+)
+""".strip()
+        + "\n",
+    )
+
+    assert _private_symbol_imports(tmp_path) == {
+        ("pkg.producer", "_PrivateService", "pkg.consumer"),
+    }
+
+
+def test_privata_ignore_on_multiline_header_keeps_private_submodule_findings(
+    tmp_path: Path,
+) -> None:
+    """In multi-line from-imports, header comments do not suppress private submodules."""
+    _write(tmp_path / "src" / "pkg" / "one" / "_internal.py", "VALUE = 1\n")
+    _write(
+        tmp_path / "src" / "pkg" / "two" / "public.py",
+        """
+from pkg.one import (  # privata: ignore
+    _internal,
+)
+""".strip()
+        + "\n",
+    )
+
+    assert _private_module_imports(tmp_path) == {
+        ("pkg.one._internal", "pkg.two.public"),
+    }
+
+
 def test_plain_import_chained_attribute_access_is_detected(tmp_path: Path) -> None:
     """import pkg.mod followed by pkg.mod.Symbol should count as cross-module usage."""
     _write(
