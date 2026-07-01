@@ -1699,6 +1699,28 @@ USED = factory().sub.VALUE
     assert ("pkg.source", "VALUE") in _symbols(tmp_path)
 
 
+def test_unimported_dotted_attribute_access_is_ignored(tmp_path: Path) -> None:
+    """Dotted names should only count as module usage when backed by an import."""
+    _write(
+        tmp_path / "src" / "provider" / "module.py",
+        """
+def get_value() -> int:
+    return 1
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "src" / "consumer" / "module.py",
+        """
+result = provider.module.get_value()
+""".strip()
+        + "\n",
+    )
+
+    symbols = _symbols(tmp_path)
+    assert ("provider.module", "get_value") in symbols
+
+
 def test_privata_is_clean_under_its_own_rules() -> None:
     """Privata should pass its own public-symbol check."""
     project_root = Path(__file__).resolve().parents[1]

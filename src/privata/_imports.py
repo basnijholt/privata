@@ -80,12 +80,15 @@ def find_cross_imports(modules: dict[str, Module]) -> set[tuple[str, str]]:  # n
             continue
 
         import_aliases: dict[str, str] = {}
+        imported_modules: set[str] = set()
 
         for node in ast.walk(consumer.tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    local = alias.asname or alias.name.split(".")[0]
-                    import_aliases[local] = alias.name
+                    if alias.asname:
+                        import_aliases[alias.asname] = alias.name
+                    else:
+                        imported_modules.add(alias.name)
 
             elif isinstance(node, ast.ImportFrom):
                 source = _resolve_relative_import(
@@ -120,7 +123,12 @@ def find_cross_imports(modules: dict[str, Module]) -> set[tuple[str, str]]:  # n
             base = _dotted_name(node.value)
             if base is None:
                 continue
-            if base in defined and base != consumer_name and attr in defined[base]:
+            if (
+                base in imported_modules
+                and base in defined
+                and base != consumer_name
+                and attr in defined[base]
+            ):
                 used.add((base, attr))
             else:
                 resolved = _resolve_alias_prefix(base, import_aliases)
