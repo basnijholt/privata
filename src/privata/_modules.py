@@ -170,7 +170,7 @@ def collect_module_collisions(source_roots: list[Path]) -> list[ModuleCollision]
                 continue
             paths_by_name.setdefault(mod_name, set()).add(py_file)
     return [
-        ModuleCollision(module=name, paths=sorted(paths, key=str))
+        ModuleCollision(module=name, paths=sorted(paths))
         for name, paths in sorted(paths_by_name.items())
         if len(paths) > 1
     ]

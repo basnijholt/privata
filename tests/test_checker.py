@@ -2008,7 +2008,7 @@ def test_module_and_package_collision_in_same_root(tmp_path: Path) -> None:
         tmp_path / "src" / "pkg" / "__init__.py",
         "",
     )
-    assert _module_collisions(tmp_path) == {"pkg": ["src/pkg.py", "src/pkg/__init__.py"]}
+    assert _module_collisions(tmp_path) == {"pkg": ["src/pkg/__init__.py", "src/pkg.py"]}
 
 
 def test_distinct_module_names_have_no_collisions(tmp_path: Path) -> None:
