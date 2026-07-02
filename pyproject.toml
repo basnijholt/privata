@@ -7,7 +7,7 @@ name = "privata"
 dynamic = ["version"]
 description = "A Python module privacy checker for keeping public interfaces intentional."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Bas Nijholt" }]
@@ -28,6 +28,8 @@ classifiers = [
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
@@ -35,7 +37,7 @@ classifiers = [
   "Topic :: Software Development :: Libraries :: Python Modules",
   "Topic :: Utilities",
 ]
-dependencies = []
+dependencies = ["tomli>=1.2.0; python_version < '3.11'"]
 
 [project.urls]
 Documentation = "http://privata.nijho.lt/"
@@ -49,6 +51,7 @@ dev = [
   "pytest>=8.4",
   "pytest-cov>=7.1",
   "ruff>=0.13",
+  "tomli>=1.2.0",
   "ty",
 ]
 
@@ -82,7 +85,7 @@ addopts = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -106,7 +109,7 @@ ignore = [
 quote-style = "double"
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.10"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
@@ -114,3 +117,8 @@ packages = ["privata"]
 
 [tool.ty.rules]
 unused-ignore-comment = "ignore"
+
+[tool.ty.environment]
+# Analyze against 3.12 so conditionally-defined stdlib symbols such as
+# ast.TypeAlias resolve; older interpreters are covered by runtime guards.
+python-version = "3.12"

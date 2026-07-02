@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import runpy
+import sys
 from pathlib import Path
 
 import pytest
@@ -510,6 +511,7 @@ app = make_app()()
     assert ("pkg.types", "app") in symbols
 
 
+@pytest.mark.skipif(sys.version_info < (3, 12), reason="PEP 695 requires Python 3.12+")
 def test_type_statement_is_collected_on_supported_python(tmp_path: Path) -> None:
     """PEP 695 type statements are collected when the parser supports them."""
     _write(
@@ -782,6 +784,7 @@ __all__ = ["PUBLIC", *NAMES]
     assert _export_issues(tmp_path) == set()
 
 
+@pytest.mark.skipif(sys.version_info < (3, 12), reason="PEP 695 requires Python 3.12+")
 def test_literal_all_checks_annotated_assignments_and_type_aliases(tmp_path: Path) -> None:
     """Annotated assignments and PEP 695 type aliases are public bindings."""
     _write(
