@@ -6,6 +6,7 @@ import ast
 from typing import TYPE_CHECKING
 
 from privata._methods._ast import dotted_name as _dotted_name
+from privata._methods._ast import referenced_names as _referenced_names_in_tree
 from privata._models import Method
 
 if TYPE_CHECKING:
@@ -91,14 +92,7 @@ def _referenced_names(module: Module) -> set[str]:
     """Return every attribute name and string literal a module mentions."""
     if module.tree is None:
         return set()
-
-    names: set[str] = set()
-    for node in ast.walk(module.tree):
-        if isinstance(node, ast.Attribute):
-            names.add(node.attr)
-        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
-            names.add(node.value)
-    return names
+    return _referenced_names_in_tree(module.tree)
 
 
 def _references_by_module(modules: Mapping[str, Module]) -> dict[str, set[str]]:

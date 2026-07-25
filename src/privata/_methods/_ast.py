@@ -14,3 +14,18 @@ def dotted_name(node: ast.expr) -> str | None:
             return None
         return f"{parent}.{node.attr}"
     return None
+
+
+def referenced_names(tree: ast.Module) -> set[str]:
+    """Return every attribute name and string literal a module mentions.
+
+    String literals count because a name reached through ``getattr(obj, "run")``
+    is as real a use as ``obj.run``.
+    """
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute):
+            names.add(node.attr)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            names.add(node.value)
+    return names
