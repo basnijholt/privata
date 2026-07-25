@@ -2400,6 +2400,13 @@ class Service:
 
     def plain(self) -> int:
         return 4
+
+
+class Rebound:
+    def overwritten(self) -> int:
+        return 5
+
+    overwritten = 5
 """.strip()
         + "\n",
     )
@@ -2472,10 +2479,7 @@ class Service:
         + "\n",
     )
 
-    methods = _methods(tmp_path)
-    assert ("pkg.service", "Service", "run") not in methods
-    assert ("pkg.service", "Service", "handle") not in methods
-    assert methods == {("pkg.service", "Service", "value")}
+    assert _methods(tmp_path) == set()
 
 
 def test_unknown_class_decorators_are_skipped(tmp_path: Path) -> None:

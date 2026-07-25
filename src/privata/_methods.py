@@ -848,6 +848,7 @@ def _class_method_candidates(
     decorator_aliases: Mapping[str, str],
 ) -> Iterator[Method]:
     aliases = dict(decorator_aliases)
+    protected_methods = _protected_method_nodes(class_node)
     for node in class_node.body:
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             _update_aliases(aliases, node)
@@ -855,6 +856,8 @@ def _class_method_candidates(
         checkable = _is_checkable_method(node, aliases)
         aliases[node.name] = f"{_LOCAL_DECORATOR_PREFIX}.{node.name}"
         if not checkable:
+            continue
+        if id(node) in protected_methods:
             continue
         if node.lineno in module.ignored_lines:
             continue
@@ -869,6 +872,28 @@ def _class_method_candidates(
             module=module.name,
             path=module.path,
         )
+
+
+def _protected_method_nodes(class_node: ast.ClassDef) -> set[int]:
+    """Return methods whose class binding is consumed or replaced later."""
+    current_methods: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = {}
+    protected: set[int] = set()
+    for node in class_node.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for decorator in node.decorator_list:
+                for child in ast.walk(decorator):
+                    if isinstance(child, ast.Name) and child.id in current_methods:
+                        protected.add(id(current_methods[child.id]))
+            previous = current_methods.get(node.name)
+            if previous is not None:
+                protected.add(id(previous))
+            current_methods[node.name] = node
+            continue
+        for name in _bound_names(node):
+            previous = current_methods.pop(name.split(".", 1)[0], None)
+            if previous is not None:
+                protected.add(id(previous))
+    return protected
 
 
 def _is_checkable_class(
