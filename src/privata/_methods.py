@@ -34,6 +34,9 @@ _SAFE_CLASS_DECORATORS = frozenset(
         "typing_extensions.final",
     },
 )
+_SAFE_DECORATOR_ROOTS = frozenset(
+    name.split(".", 1)[0] for name in _SAFE_METHOD_DECORATORS | _SAFE_CLASS_DECORATORS
+)
 _BUILTIN_ALIASES = {
     "classmethod": "builtins.classmethod",
     "object": "builtins.object",
@@ -1096,7 +1099,10 @@ def _update_aliases(aliases: dict[str, str], node: ast.stmt) -> None:
     elif isinstance(node, ast.ImportFrom):
         source = f"{'.' * node.level}{node.module or ''}"
         for alias in node.names:
-            if alias.name != "*":
+            if alias.name == "*":
+                for name in {*aliases, *_SAFE_DECORATOR_ROOTS}:
+                    aliases[name] = f"{_LOCAL_DECORATOR_PREFIX}.{name}"
+            else:
                 aliases[alias.asname or alias.name] = f"{source}.{alias.name}"
     else:
         for name in _bound_names(node):

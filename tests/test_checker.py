@@ -2358,6 +2358,40 @@ class Service:
     assert _methods(tmp_path) == set()
 
 
+def test_star_import_shadowed_safe_decorators_are_skipped(tmp_path: Path) -> None:
+    """A star import may replace both direct and module decorator bindings."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        """
+from builtins import property
+from .registry import *
+
+
+class Service:
+    @property
+    def value(self) -> int:
+        return 1
+
+    @functools.cache
+    def cached(self) -> int:
+        return 2
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "registry.py",
+        """
+__all__ = ["functools", "property"]
+
+functools = object()
+property = lambda function: function
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == set()
+
+
 def test_compound_decorator_bindings_are_conservative(tmp_path: Path) -> None:
     """Every binding form can shadow a trusted decorator name."""
     _write(
@@ -3023,6 +3057,35 @@ def test_run(enabled: bool) -> None:
         from helper import Helper
 
         assert Helper().run() == 1
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "tach.toml",
+        'source_roots = ["tests"]\n',
+    )
+
+    assert _methods(tmp_path) == set()
+
+
+def test_conditional_helper_bindings_certify_all_runtime_possibilities(
+    tmp_path: Path,
+) -> None:
+    """A post-branch call may reference either helper bound by the branches."""
+    for helper in ["first_helper", "second_helper"]:
+        _write(
+            tmp_path / "tests" / f"{helper}.py",
+            "class Helper:\n    def run(self) -> int:\n        return 1\n",
+        )
+    _write(
+        tmp_path / "tests" / "test_helper.py",
+        """
+if ENABLED:
+    from first_helper import Helper
+else:
+    from second_helper import Helper
+
+Helper().run()
 """.strip()
         + "\n",
     )
