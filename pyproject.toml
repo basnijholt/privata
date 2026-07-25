@@ -93,6 +93,7 @@ ignore = [
   "D",       # pydocstyle
   "ANN",     # annotations
   "COM812",  # trailing comma
+  "CPY001",  # copyright notice in every file; the LICENSE file covers this
   "ISC001",  # implicit string concat
   "T20",     # print statements are acceptable for CLI output
 ]
