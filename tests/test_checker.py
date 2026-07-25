@@ -2888,6 +2888,96 @@ def build() -> type:
     assert _methods(tmp_path) == set()
 
 
+def test_computed_getattr_keeps_all_methods_of_the_class_public(tmp_path: Path) -> None:
+    """A class that dispatches by a computed name may reach any of its methods."""
+    _write(
+        tmp_path / "src" / "pkg" / "visitor.py",
+        """
+class Converter:
+    def visit(self, node: object) -> object:
+        return getattr(self, "visit_" + type(node).__name__)(node)
+
+    def visit_If(self, node: object) -> int:
+        return 1
+
+    def visit_For(self, node: object) -> int:
+        return 2
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == set()
+
+
+def test_literal_getattr_leaves_the_class_checkable(tmp_path: Path) -> None:
+    """A spelled-out getattr name is an ordinary reference, not dynamic dispatch.
+
+    All three methods are still reported: a string literal only keeps a method
+    public when another module holds it, exactly as for an attribute access.
+    """
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        """
+class Service:
+    def run(self) -> object:
+        return getattr(self, "handler")
+
+    def handler(self) -> int:
+        return 1
+
+    def helper(self) -> int:
+        return 2
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == {
+        ("pkg.service", "Service", "run"),
+        ("pkg.service", "Service", "handler"),
+        ("pkg.service", "Service", "helper"),
+    }
+
+
+@pytest.mark.parametrize("builtin", ["delattr", "hasattr", "setattr"])
+def test_other_dynamic_attribute_builtins_are_recognised(tmp_path: Path, builtin: str) -> None:
+    """Every builtin that reaches an attribute by name counts as dynamic."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        f"""
+class Service:
+    def run(self, name: str) -> object:
+        return {builtin}(self, name, 1) if "{builtin}" == "setattr" else {builtin}(self, name)
+
+    def helper(self) -> int:
+        return 1
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == set()
+
+
+def test_bare_getattr_call_is_not_treated_as_dynamic(tmp_path: Path) -> None:
+    """A one-argument getattr cannot name an attribute, so it is not dispatch."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        """
+class Service:
+    def run(self) -> object:
+        return getattr(self)
+
+    def helper(self) -> int:
+        return 1
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == {
+        ("pkg.service", "Service", "run"),
+        ("pkg.service", "Service", "helper"),
+    }
+
+
 def test_subclassed_class_methods_are_not_flagged(tmp_path: Path) -> None:
     """A subclass that only overrides a method keeps the base method public."""
     _write(

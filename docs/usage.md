@@ -85,7 +85,24 @@ Privata skips:
 - methods carrying any decorator other than `@property`, `@staticmethod`, `@classmethod`, `@cached_property`, `@cache`, `@lru_cache`, and `@final`
 - methods that call the same method through `super()`, since cooperative mixins must preserve that name
 
-The last rule is what keeps route handlers, Pydantic validators, pytest fixtures, and Celery tasks out of the report: those methods are registered under their current name by a decorator.
+The decorator rule is what keeps route handlers, Pydantic validators, pytest fixtures, and Celery tasks out of the report: those methods are registered under their current name by a decorator.
+
+### Dispatch Privata cannot see
+
+The computed-name rule covers `getattr`, `setattr`, `hasattr`, and `delattr` called with a name that is not a string literal, which is the common visitor and handler shape:
+
+```python
+class Converter:
+    def visit(self, node):
+        return getattr(self, "visit_" + type(node).__name__)(node)
+```
+
+Every method of `Converter` is left alone, because the dispatch could reach any of them.
+
+Dispatch that does not go through those builtins is **not supported**, and Privata will report false positives for it.
+That includes a table of bound methods assembled in another module, a method name forwarded through `**kwargs`, `operator.attrgetter`, and anything reached through `eval` or `globals()`.
+There is no reliable way to see those statically, so Privata does not try.
+Suppress such a method with `__all__`, a Tach interface entry, or `# privata: ignore`.
 
 ## Private Module Imports
 
