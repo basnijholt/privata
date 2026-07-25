@@ -158,6 +158,7 @@ Privata intentionally ignores imports from `tests/`.
 If only tests import a symbol, Privata treats that symbol as private.
 
 **Exception — test helper modules in a test source root:** when `tach.toml` lists a directory such as `tests/` under `source_roots`, non-test files inside that root (e.g. `tests/something.py`) are scanned as ordinary modules. Imports from co-located test files *do* count as cross-module usage in this case, because those helper modules exist solely to serve the test suite. A symbol that at least one test file imports is treated as public; a symbol that no test file imports is still flagged as a private candidate.
+For methods, a test file that imports a helper module certifies every method name that file mentions. Attribution is per file rather than per receiver, so a helper a test never imports is still checked, while a helper it does import is credited generously.
 
 ## Development
 

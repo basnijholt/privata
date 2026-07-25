@@ -2950,6 +2950,99 @@ class Child(Other):
     assert _methods(tmp_path) == {("pkg.service", "Service", "helper")}
 
 
+def test_from_import_certifies_the_helper_module(tmp_path: Path) -> None:
+    """A ``from helper import X`` form attributes the file's names to ``helper``."""
+    _write(
+        tmp_path / "tests" / "something.py",
+        "class Helper:\n    def get_value(self) -> int:\n        return 42\n",
+    )
+    _write(
+        tmp_path / "tests" / "test_blah.py",
+        """
+from something import Helper
+
+
+def test_value() -> None:
+    assert Helper().get_value() == 42
+""".strip()
+        + "\n",
+    )
+    _write(tmp_path / "tach.toml", 'source_roots = ["tests"]\n')
+
+    assert _methods(tmp_path) == set()
+
+
+def test_helper_references_are_credited_to_every_imported_helper(tmp_path: Path) -> None:
+    """Attribution is per file, not per receiver: both imported helpers are credited.
+
+    The coarse rule can only keep a method public that a receiver-aware reading
+    would have flagged, which is the safe direction for a rename suggestion.
+    """
+    _write(
+        tmp_path / "tests" / "first.py",
+        "class First:\n    def shared(self) -> int:\n        return 1\n",
+    )
+    _write(
+        tmp_path / "tests" / "second.py",
+        "class Second:\n    def shared(self) -> int:\n        return 2\n",
+    )
+    _write(
+        tmp_path / "tests" / "test_blah.py",
+        """
+import first
+import second
+
+
+def test_value() -> None:
+    assert first.First().shared() == 1
+    assert second.Second() is not None
+""".strip()
+        + "\n",
+    )
+    _write(tmp_path / "tach.toml", 'source_roots = ["tests"]\n')
+
+    assert _methods(tmp_path) == set()
+
+
+def test_unresolvable_relative_import_certifies_nothing(tmp_path: Path) -> None:
+    """A relative import that escapes the source root is ignored, not guessed at."""
+    _write(
+        tmp_path / "tests" / "orphan.py",
+        "class Orphan:\n    def unused(self) -> int:\n        return 1\n",
+    )
+    _write(
+        tmp_path / "tests" / "test_blah.py",
+        """
+from .. import orphan
+
+
+def test_value() -> None:
+    assert orphan.Orphan().unused() == 1
+""".strip()
+        + "\n",
+    )
+    _write(tmp_path / "tach.toml", 'source_roots = ["tests"]\n')
+
+    assert _methods(tmp_path) == {("orphan", "Orphan", "unused")}
+
+
+def test_helper_methods_are_flagged_when_no_test_file_imports_the_helper(
+    tmp_path: Path,
+) -> None:
+    """A helper module that no test file imports certifies nothing."""
+    _write(
+        tmp_path / "tests" / "orphan.py",
+        "class Orphan:\n    def unused(self) -> int:\n        return 1\n",
+    )
+    _write(
+        tmp_path / "tests" / "test_blah.py",
+        "def test_value() -> None:\n    assert True\n",
+    )
+    _write(tmp_path / "tach.toml", 'source_roots = ["tests"]\n')
+
+    assert _methods(tmp_path) == {("orphan", "Orphan", "unused")}
+
+
 def test_test_source_root_test_files_certify_helper_methods(tmp_path: Path) -> None:
     """Test files certify methods of helper modules in their own test source root."""
     _write(
@@ -3016,139 +3109,6 @@ def test_value() -> None:
     assert _methods(tmp_path) == {("something", "Helper", "get_unused")}
 
 
-def test_test_method_references_are_scoped_to_the_imported_helper(tmp_path: Path) -> None:
-    """A test reference does not certify a same-named method in another helper."""
-    _write(
-        tmp_path / "tests" / "used_helper.py",
-        "class Helper:\n    def run(self) -> int:\n        return 1\n",
-    )
-    _write(
-        tmp_path / "tests" / "unused_helper.py",
-        "class Helper:\n    def run(self) -> int:\n        return 2\n",
-    )
-    _write(
-        tmp_path / "tests" / "test_used_helper.py",
-        """
-from unused_helper import Helper as UnusedHelper
-from used_helper import Helper
-
-
-def test_run() -> None:
-    unused = UnusedHelper()
-    used: Helper = Helper()
-    assert unused
-    assert used.run() == 1
-""".strip()
-        + "\n",
-    )
-    _write(
-        tmp_path / "tach.toml",
-        'source_roots = ["tests"]\n',
-    )
-
-    assert _methods(tmp_path) == {("unused_helper", "Helper", "run")}
-
-
-def test_shadowed_test_helper_import_uses_the_last_binding(tmp_path: Path) -> None:
-    """A later import replaces an earlier helper bound to the same local name."""
-    _write(
-        tmp_path / "tests" / "used_helper.py",
-        "class Helper:\n    def run(self) -> int:\n        return 1\n",
-    )
-    _write(
-        tmp_path / "tests" / "unused_helper.py",
-        "class Helper:\n    def run(self) -> int:\n        return 2\n",
-    )
-    _write(
-        tmp_path / "tests" / "test_used_helper.py",
-        """
-from unused_helper import Helper
-from used_helper import Helper
-
-
-def test_run() -> None:
-    assert Helper().run() == 1
-""".strip()
-        + "\n",
-    )
-    _write(
-        tmp_path / "tach.toml",
-        'source_roots = ["tests"]\n',
-    )
-
-    assert _methods(tmp_path) == {("unused_helper", "Helper", "run")}
-
-
-@pytest.mark.parametrize(
-    "expression",
-    [
-        "(lambda Helper: Helper.run())(object())",
-        "[Helper.run() for Helper in [object()]]",
-        "[Helper for Helper in [object()] if Helper.run()]",
-    ],
-    ids=["lambda", "comprehension", "comprehension-filter"],
-)
-def test_expression_local_shadowing_does_not_certify_helper_method(
-    tmp_path: Path,
-    expression: str,
-) -> None:
-    """Expression-local names replace imported helper bindings."""
-    _write(
-        tmp_path / "tests" / "helper.py",
-        "class Helper:\n    def run(self) -> int:\n        return 1\n",
-    )
-    _write(
-        tmp_path / "tests" / "test_helper.py",
-        f"from helper import Helper\n\n{expression}\n",
-    )
-    _write(
-        tmp_path / "tach.toml",
-        'source_roots = ["tests"]\n',
-    )
-
-    assert _methods(tmp_path) == {("helper", "Helper", "run")}
-
-
-@pytest.mark.parametrize(
-    "expression",
-    [
-        "(Helper := UsedHelper)",
-        "[(Helper := UsedHelper) for _ in [0]]",
-    ],
-    ids=["named-expression", "comprehension-named-expression"],
-)
-def test_named_expression_rebinding_uses_the_new_helper(
-    tmp_path: Path,
-    expression: str,
-) -> None:
-    """Walrus targets replace stale imports, including from a comprehension scope."""
-    _write(
-        tmp_path / "tests" / "used_helper.py",
-        "class Helper:\n    def run(self) -> int:\n        return 1\n",
-    )
-    _write(
-        tmp_path / "tests" / "unused_helper.py",
-        "class Helper:\n    def run(self) -> int:\n        return 2\n",
-    )
-    _write(
-        tmp_path / "tests" / "test_used_helper.py",
-        f"""
-from unused_helper import Helper
-from used_helper import Helper as UsedHelper
-
-{expression}
-Helper().run()
-""".strip()
-        + "\n",
-    )
-    _write(
-        tmp_path / "tach.toml",
-        'source_roots = ["tests"]\n',
-    )
-
-    assert _methods(tmp_path) == {("unused_helper", "Helper", "run")}
-
-
 def test_lambda_default_uses_outer_helper_binding(tmp_path: Path) -> None:
     """Lambda defaults are evaluated before parameter bindings exist."""
     _write(
@@ -3165,73 +3125,6 @@ def test_lambda_default_uses_outer_helper_binding(tmp_path: Path) -> None:
     )
 
     assert _methods(tmp_path) == set()
-
-
-def test_interleaved_test_helper_bindings_preserve_source_order(tmp_path: Path) -> None:
-    """An assignment before a later import does not erase the runtime-winning import."""
-    _write(
-        tmp_path / "tests" / "used_helper.py",
-        "class Helper:\n    def run(self) -> int:\n        return 1\n",
-    )
-    _write(
-        tmp_path / "tests" / "unused_helper.py",
-        "class Helper:\n    def run(self) -> int:\n        return 2\n",
-    )
-    _write(
-        tmp_path / "tests" / "test_used_helper.py",
-        """
-from unused_helper import Helper
-
-Helper = object
-
-def test_run() -> None:
-    assert Helper().run() == 1
-
-
-from used_helper import Helper
-""".strip()
-        + "\n",
-    )
-    _write(
-        tmp_path / "tach.toml",
-        'source_roots = ["tests"]\n',
-    )
-
-    assert _methods(tmp_path) == {("unused_helper", "Helper", "run")}
-
-
-def test_module_invocation_uses_bindings_at_call_time(tmp_path: Path) -> None:
-    """A direct module call uses bindings present before a later reimport."""
-    _write(
-        tmp_path / "tests" / "used_helper.py",
-        "class Helper:\n    def run(self) -> int:\n        return 1\n",
-    )
-    _write(
-        tmp_path / "tests" / "unused_helper.py",
-        "class Helper:\n    def run(self) -> int:\n        return 2\n",
-    )
-    _write(
-        tmp_path / "tests" / "test_used_helper.py",
-        """
-from used_helper import Helper
-
-
-def exercise() -> None:
-    assert Helper().run() == 1
-
-
-exercise()
-
-from unused_helper import Helper
-""".strip()
-        + "\n",
-    )
-    _write(
-        tmp_path / "tach.toml",
-        'source_roots = ["tests"]\n',
-    )
-
-    assert _methods(tmp_path) == {("unused_helper", "Helper", "run")}
 
 
 def test_conditional_test_helper_import_certifies_method(tmp_path: Path) -> None:
@@ -3277,182 +3170,6 @@ else:
     from second_helper import Helper
 
 Helper().run()
-""".strip()
-        + "\n",
-    )
-    _write(
-        tmp_path / "tach.toml",
-        'source_roots = ["tests"]\n',
-    )
-
-    assert _methods(tmp_path) == set()
-
-
-def test_nonempty_loop_rebinding_replaces_test_helper_import(tmp_path: Path) -> None:
-    """A definitely executed loop target replaces an imported helper binding."""
-    _write(
-        tmp_path / "tests" / "helper.py",
-        "class Helper:\n    def run(self) -> int:\n        return 1\n",
-    )
-    _write(
-        tmp_path / "tests" / "test_helper.py",
-        """
-from helper import Helper
-
-
-class Other:
-    def run(self) -> int:
-        return 2
-
-
-for Helper in [Other]:
-    pass
-
-Helper().run()
-""".strip()
-        + "\n",
-    )
-    _write(
-        tmp_path / "tach.toml",
-        'source_roots = ["tests"]\n',
-    )
-
-    assert _methods(tmp_path) == {("helper", "Helper", "run")}
-
-
-def test_rebound_local_function_is_not_analyzed_at_call_site(tmp_path: Path) -> None:
-    """A call after rebinding does not invoke the old local function."""
-    _write(
-        tmp_path / "tests" / "helper.py",
-        "class Helper:\n    def run(self) -> int:\n        return 1\n",
-    )
-    _write(
-        tmp_path / "tests" / "test_helper.py",
-        """
-from helper import Helper
-
-
-def exercise() -> int:
-    return Helper().run()
-
-
-exercise = lambda: 0
-exercise()
-""".strip()
-        + "\n",
-    )
-    _write(
-        tmp_path / "tach.toml",
-        'source_roots = ["tests"]\n',
-    )
-
-    assert _methods(tmp_path) == {("helper", "Helper", "run")}
-
-
-def test_rebinding_dotted_import_root_invalidates_descendants(tmp_path: Path) -> None:
-    """Replacing a package binding invalidates imported dotted modules."""
-    _write(
-        tmp_path / "tests" / "helpers" / "__init__.py",
-        "",
-    )
-    _write(
-        tmp_path / "tests" / "helpers" / "unused.py",
-        "class Helper:\n    def run(self) -> int:\n        return 1\n",
-    )
-    _write(
-        tmp_path / "tests" / "test_helper.py",
-        """
-import helpers.unused
-from types import SimpleNamespace
-
-helpers = SimpleNamespace(unused=object())
-helpers.unused.run()
-""".strip()
-        + "\n",
-    )
-    _write(
-        tmp_path / "tach.toml",
-        'source_roots = ["tests"]\n',
-    )
-
-    assert _methods(tmp_path) == {("helpers.unused", "Helper", "run")}
-
-
-def test_test_helper_compound_scopes_update_bindings(tmp_path: Path) -> None:
-    """Compound statements process imports, targets, and references in scope."""
-    method_names = [
-        "while_call",
-        "while_else_call",
-        "for_else_call",
-        "augmented_call",
-        "with_call",
-        "try_call",
-        "except_call",
-        "else_call",
-        "finally_call",
-        "match_call",
-        "star_call",
-    ]
-    methods = "\n".join(
-        f"    def {name}(self) -> int:\n        return 1\n" for name in method_names
-    )
-    _write(
-        tmp_path / "tests" / "helper.py",
-        f"class Helper:\n{methods}",
-    )
-    _write(
-        tmp_path / "tests" / "test_helper.py",
-        """
-from helper import Helper
-
-alias = Helper
-alias += Helper
-alias.augmented_call()
-
-
-class Container(Helper, metaclass=Helper):
-    helper = Helper()
-
-
-def retained() -> int:
-    return Helper().for_else_call()
-
-
-for item in ITEMS:
-    pass
-else:
-    retained()
-
-
-while ENABLE:
-    from helper import Helper as WhileHelper
-
-    WhileHelper().while_call()
-else:
-    Helper().while_else_call()
-
-with Helper() as managed:
-    managed.with_call()
-
-try:
-    Helper().try_call()
-except Helper as error:
-    Helper().except_call()
-else:
-    Helper().else_call()
-finally:
-    Helper().finally_call()
-
-match Helper():
-    case {"item": matched, **rest} if Helper():
-        matched.match_call()
-    case [*items]:
-        Helper().star_call()
-
-(first, *remaining) = (Helper, [])
-namespace.value = Helper
-mapping["helper"] = Helper
-del alias
 """.strip()
         + "\n",
     )
