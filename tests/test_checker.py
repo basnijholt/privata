@@ -2627,6 +2627,39 @@ def test_run() -> None:
     assert _methods(tmp_path) == {("unused_helper", "Helper", "run")}
 
 
+def test_interleaved_test_helper_bindings_preserve_source_order(tmp_path: Path) -> None:
+    """An assignment before a later import does not erase the runtime-winning import."""
+    _write(
+        tmp_path / "tests" / "used_helper.py",
+        "class Helper:\n    def run(self) -> int:\n        return 1\n",
+    )
+    _write(
+        tmp_path / "tests" / "unused_helper.py",
+        "class Helper:\n    def run(self) -> int:\n        return 2\n",
+    )
+    _write(
+        tmp_path / "tests" / "test_used_helper.py",
+        """
+from unused_helper import Helper
+
+Helper = object
+
+def test_run() -> None:
+    assert Helper().run() == 1
+
+
+from used_helper import Helper
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "tach.toml",
+        'source_roots = ["tests"]\n',
+    )
+
+    assert _methods(tmp_path) == {("unused_helper", "Helper", "run")}
+
+
 def test_methods_used_only_by_tests_are_flagged(tmp_path: Path) -> None:
     """Test usage does not keep a production method public."""
     _write(
