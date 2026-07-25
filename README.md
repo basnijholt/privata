@@ -39,7 +39,7 @@ def run() -> int:
 Privata reports:
 
 ```text
-Found 1 public symbols that could be made private:
+Found 1 public symbol that could be made private:
 
   src/example/service.py:1: function `helper`
 ```
@@ -102,19 +102,20 @@ Found 2 public symbols that could be made private:
   src/example/service.py:12: function `helper`
   src/example/service.py:21: class `InternalState`
 
-Found 1 public methods that could be made private:
+Found 2 public methods in 1 class that could be made private:
 
-  src/example/service.py:25: method `InternalState.reset`
+  src/example/service.py:21: class `InternalState` (2 of 5 public methods)
+      reset:25, drain:31
 
-Found 1 private module imports outside their package subtree:
+Found 1 private module import outside the owning package subtree:
 
   src/example/api.py:3: imports private module `example.worker._runtime`
 
-Found 1 private symbol imports from production modules:
+Found 1 private symbol import from production modules:
 
   src/example/api.py:4: imports private symbol `example.worker.runtime._Helper`
 
-Found 1 __all__ export issues:
+Found 1 __all__ export issue:
 
   src/example/__init__.py:5: public name `Service` missing from __all__
 ```

@@ -23,13 +23,21 @@ class Symbol:
 
 @dataclass
 class Method:
-    """A public method that no other production module references."""
+    """A public method that no other production module references.
+
+    ``class_lineno`` and ``class_public_methods`` describe the owning class, so
+    a caller can group findings and see how much of the class they cover. Ten
+    findings out of ten public methods is one question about the class; ten out
+    of a hundred is ten separate helpers that leaked.
+    """
 
     name: str
     class_name: str
     lineno: int
     module: str
     path: Path
+    class_lineno: int
+    class_public_methods: int
 
 
 @dataclass

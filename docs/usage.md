@@ -80,6 +80,19 @@ class Service:
 ```
 
 If another module calls `Service().run()` but nothing outside `service.py` mentions `helper`, Privata reports `helper` as a candidate for `_helper`.
+
+Findings are grouped by the class that owns them, and each group leads with how much of the class it covers:
+
+```text
+Found 13 public methods in 2 classes that could be made private:
+
+  src/pkg/tracker.py:64: class `DefinedVariableTracker` (12 of 14 public methods)
+      is_defined:71, record_definition:78, next_branch:85, skip_branch:92
+  src/pkg/messages.py:40: class `MessageBuilder` (1 of 143 public methods)
+      are_type_names_disabled:207
+```
+
+The `n of m` count separates two different findings. Twelve of fourteen is one question about the class: is it internal to its module? One of a hundred and forty-three is a single helper that leaked.
 A method counts as used when another production module accesses the name as an attribute, such as `service.helper()`, or names it in a string literal, such as `getattr(service, "helper")`.
 As with top-level symbols, use inside the defining module does not keep a method public, and use from tests does not either.
 Matching is intentionally name-based rather than receiver-aware, so an unrelated attribute with the same name in another module conservatively suppresses the report.

@@ -391,12 +391,12 @@ from pkg.write_coordinator import _EventCacheWriteCoordinator
     assert cli_main([str(tmp_path)]) == 1
 
     output = capsys.readouterr()
-    assert "Found 1 private symbol imports from production modules:" in output.out
+    assert "Found 1 private symbol import from production modules:" in output.out
     assert (
         "src/pkg/runtime_support.py:1: imports private symbol "
         "`pkg.write_coordinator._EventCacheWriteCoordinator`"
     ) in output.out
-    assert "function `local_helper`\n\nFound 1 private symbol imports" in output.out
+    assert "function `local_helper`\n\nFound 1 private symbol import" in output.out
 
 
 def test_private_symbol_imports_are_reported(tmp_path: Path) -> None:
@@ -1244,7 +1244,7 @@ from pkg.one import _internal
     )
     assert cli_main([str(tmp_path)]) == 1
     output = capsys.readouterr()
-    assert "Found 1 private module imports outside their package subtree:" in output.out
+    assert "Found 1 private module import outside the owning package subtree:" in output.out
     assert "src/pkg/two/public.py:1: imports private module `pkg.one._internal`" in output.out
 
 
@@ -1262,7 +1262,7 @@ __all__ = ["MISSING"]
     )
     assert cli_main([str(tmp_path)]) == 1
     output = capsys.readouterr()
-    assert "Found 1 __all__ export issues:" in output.out
+    assert "Found 1 __all__ export issue:" in output.out
     assert "src/pkg/exports.py:1: __all__ exports unknown name `MISSING`" in output.out
 
 
@@ -1310,7 +1310,7 @@ def local_helper() -> int:
     )
     assert cli_main([str(tmp_path)]) == 1
     output = capsys.readouterr()
-    assert "function `local_helper`\n\nFound 1 private module imports" in output.out
+    assert "function `local_helper`\n\nFound 1 private module import" in output.out
 
 
 def test_cli_separates_export_findings_from_previous_sections(
@@ -2133,7 +2133,7 @@ def test_cli_reports_unparsable_files_before_other_findings(
 
     assert cli_main([str(tmp_path)]) == 1
     output = capsys.readouterr().out
-    assert "Found 1 source files that could not be parsed" in output
+    assert "Found 1 source file that could not be parsed" in output
     assert "src/pkg/app.py:8:" in output
     assert output.index("could not be parsed") < output.index("could be made private")
 
@@ -2157,9 +2157,9 @@ def test_cli_reports_module_collisions_before_other_findings(
     )
     assert cli_main([str(tmp_path)]) == 1
     output = capsys.readouterr()
-    assert "Found 1 module names defined by multiple files" in output.out
+    assert "Found 1 module name defined by multiple files" in output.out
     assert "module `utils` is defined by: src/utils.py, tests/utils.py" in output.out
-    assert "public symbols that could be made private" in output.out
+    assert "public symbol that could be made private" in output.out
     assert output.out.index("defined by multiple files") < output.out.index("could be made private")
 
 
@@ -3516,10 +3516,11 @@ class Service:
 
     assert cli_main([str(tmp_path), "--methods"]) == 1
     output = capsys.readouterr().out
-    assert "Found 1 public methods that could be made private:" in output
-    assert "src/pkg/service.py:5: method `Service.helper`" in output
-    assert output.index("public symbols that could be made private") < output.index(
-        "public methods that could be made private",
+    assert "Found 1 public method in 1 class that could be made private:" in output
+    assert "src/pkg/service.py:1: class `Service` (1 of 2 public methods)" in output
+    assert "helper:5" in output
+    assert output.index("public symbol that could be made private") < output.index(
+        "public method in 1 class that could be made private",
     )
 
 
@@ -3567,7 +3568,105 @@ def test_cli_methods_flag_turns_the_check_on(
     _method_only_project(tmp_path)
 
     assert cli_main([str(tmp_path), "--methods"]) == 1
-    assert "method `Service.helper`" in capsys.readouterr().out
+    assert "class `Service` (1 of 2 public methods)" in capsys.readouterr().out
+
+
+def test_method_findings_are_grouped_by_owning_class(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Each class gets one header carrying its share of the class, then its methods."""
+    _write(tmp_path / "src" / "pkg" / "__init__.py", "")
+    _write(
+        tmp_path / "src" / "pkg" / "wide.py",
+        """
+class Wide:
+    def kept(self) -> int:
+        return 1
+
+    def alpha(self) -> int:
+        return 2
+
+    def beta(self) -> int:
+        return 3
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "narrow.py",
+        """
+class Narrow:
+    def solo(self) -> int:
+        return 1
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "app.py",
+        """
+from pkg.narrow import Narrow
+from pkg.wide import Wide
+
+
+def start() -> int:
+    assert Narrow() is not None
+    return Wide().kept()
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "pyproject.toml",
+        '[project]\nname = "pkg"\n\n[project.scripts]\npkg = "pkg.app:start"\n',
+    )
+
+    assert cli_main([str(tmp_path), "--methods"]) == 1
+    lines = capsys.readouterr().out.splitlines()
+
+    assert lines[0] == "Found 3 public methods in 2 classes that could be made private:"
+    assert "  src/pkg/narrow.py:1: class `Narrow` (1 of 1 public methods)" in lines
+    assert "      solo:2" in lines
+    assert "  src/pkg/wide.py:1: class `Wide` (2 of 3 public methods)" in lines
+    assert "      alpha:5, beta:8" in lines
+
+
+def test_long_method_group_wraps(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """A class with many findings wraps onto continuation lines rather than one long line."""
+    body = "\n\n".join(
+        f"    def method_number_{index}(self) -> int:\n        return {index}"
+        for index in range(12)
+    )
+    _write(tmp_path / "src" / "pkg" / "__init__.py", "")
+    _write(tmp_path / "src" / "pkg" / "wide.py", f"class Wide:\n{body}\n")
+
+    assert cli_main([str(tmp_path), "--methods"]) == 1
+    lines = [line for line in capsys.readouterr().out.splitlines() if line.startswith("      ")]
+
+    assert len(lines) > 1
+    assert all(len(line) <= 100 for line in lines)
+    assert "method_number_0:2" in lines[0]
+
+
+def test_method_carries_its_class_context(tmp_path: Path) -> None:
+    """Each finding knows where its class starts and how many public methods it has."""
+    _write(tmp_path / "src" / "pkg" / "__init__.py", "")
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        """
+class Service:
+    def helper(self) -> int:
+        return 1
+
+    def other(self) -> int:
+        return 2
+""".strip()
+        + "\n",
+    )
+
+    found = find_method_candidates(tmp_path)
+
+    context = [(method.name, method.class_lineno, method.class_public_methods) for method in found]
+
+    assert context == [("helper", 1, 2), ("other", 1, 2)]
 
 
 def test_find_method_candidates_ignores_the_cli_default(tmp_path: Path) -> None:
