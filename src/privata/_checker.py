@@ -101,8 +101,17 @@ def _test_helper_method_references(
     return references
 
 
-def _collect_privacy_findings(project_root: Path) -> _PrivacyFindings:
-    """Collect public-symbol and private-module boundary findings."""
+def _collect_privacy_findings(
+    project_root: Path,
+    *,
+    include_methods: bool,
+) -> _PrivacyFindings:
+    """Collect public-symbol and private-module boundary findings.
+
+    ``include_methods`` is required rather than defaulted: the method scan is
+    the most expensive part of a run, and every caller knows whether it wants
+    the answer.
+    """
     roots = source_roots(project_root)
     modules, unparsable_modules = collect_modules_with_errors(roots)
     test_roots = [root for root in roots if is_test_source_root(root)]
@@ -128,10 +137,20 @@ def _collect_privacy_findings(project_root: Path) -> _PrivacyFindings:
     return _PrivacyFindings(
         unparsable_modules=unparsable_modules,
         candidates=candidates,
-        method_candidates=collect_method_candidates(
-            modules,
-            public_interface=external_entrypoints | public_interface_exports | package_reexports,
-            test_references=_test_helper_method_references(test_roots, modules, test_consumers),
+        method_candidates=(
+            collect_method_candidates(
+                modules,
+                public_interface=(
+                    external_entrypoints | public_interface_exports | package_reexports
+                ),
+                test_references=_test_helper_method_references(
+                    test_roots,
+                    modules,
+                    test_consumers,
+                ),
+            )
+            if include_methods
+            else []
         ),
         private_module_imports=collect_private_module_imports(modules),
         private_symbol_imports=collect_private_symbol_imports(modules),
@@ -142,43 +161,49 @@ def _collect_privacy_findings(project_root: Path) -> _PrivacyFindings:
 
 def find_unparsable_modules(project_root: Path) -> list[UnparsableModule]:
     """Find production source files that could not be parsed."""
-    return _collect_privacy_findings(project_root).unparsable_modules
+    return _collect_privacy_findings(project_root, include_methods=False).unparsable_modules
 
 
 def find_private_candidates(project_root: Path) -> list[Symbol]:
     """Find symbols that appear module-local and should be private."""
-    return _collect_privacy_findings(project_root).candidates
+    return _collect_privacy_findings(project_root, include_methods=False).candidates
 
 
 def find_method_candidates(project_root: Path) -> list[Method]:
     """Find public methods that only their own module refers to."""
-    return _collect_privacy_findings(project_root).method_candidates
+    return _collect_privacy_findings(project_root, include_methods=True).method_candidates
 
 
 def find_private_module_imports(project_root: Path) -> list[PrivateModuleImport]:
     """Find private modules imported from outside their package subtree."""
-    return _collect_privacy_findings(project_root).private_module_imports
+    return _collect_privacy_findings(project_root, include_methods=False).private_module_imports
 
 
 def find_private_symbol_imports(project_root: Path) -> list[PrivateSymbolImport]:
     """Find private top-level symbols imported from another production module."""
-    return _collect_privacy_findings(project_root).private_symbol_imports
+    return _collect_privacy_findings(project_root, include_methods=False).private_symbol_imports
 
 
 def find_export_issues(project_root: Path) -> list[ExportIssue]:
     """Find literal __all__ declarations that are stale or incomplete."""
-    return _collect_privacy_findings(project_root).export_issues
+    return _collect_privacy_findings(project_root, include_methods=False).export_issues
 
 
 def find_module_collisions(project_root: Path) -> list[ModuleCollision]:
     """Find module names that resolve to more than one file across source roots."""
-    return _collect_privacy_findings(project_root).module_collisions
+    return _collect_privacy_findings(project_root, include_methods=False).module_collisions
 
 
-def check_project(project_root: Path) -> int:
-    """Scan project and report module-local public symbols."""
+def check_project(project_root: Path, *, include_methods: bool = False) -> int:
+    """Scan project and report module-local public symbols.
+
+    The method check is off by default. Attribute access is dynamic in Python,
+    so it cannot see every caller, and on a large codebase it reports far more
+    than the other checks. Opt in with ``include_methods`` once the noise is
+    worth it for a given project.
+    """
     project_root = project_root.resolve()
-    findings = _collect_privacy_findings(project_root)
+    findings = _collect_privacy_findings(project_root, include_methods=include_methods)
 
     sections: list[tuple[bool, Callable[[], None]]] = [
         (

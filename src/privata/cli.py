@@ -25,13 +25,22 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Project root to scan. Defaults to the current directory.",
     )
+    parser.add_argument(
+        "--methods",
+        action="store_true",
+        help=(
+            "Also report public methods that no other production module refers to. "
+            "Off by default: attribute access is dynamic, so this check cannot see "
+            "every caller."
+        ),
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the Privata module privacy checker."""
     args = _build_parser().parse_args(argv)
-    return check_project(args.project_root)
+    return check_project(args.project_root, include_methods=args.methods)
 
 
 if __name__ == "__main__":

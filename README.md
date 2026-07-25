@@ -14,7 +14,7 @@ Privata is a static checker for keeping module boundaries intentional.
 It scans your production Python modules and reports five kinds of interface drift:
 
 - public top-level functions, classes, variables, and type aliases that are only used inside their own module
-- public methods such as `Service.helper` that no other production module ever refers to
+- public methods such as `Service.helper` that no other production module ever refers to (opt in with `--methods`)
 - imports of private modules such as `pkg._internal` from outside their owning package subtree
 - imports of private top-level symbols such as `pkg.service._Helper` from another production module
 - literal `__all__` declarations that are stale, incomplete, or exporting names that do not exist
@@ -92,7 +92,7 @@ repos:
 pre-commit run --hook-stage manual privata-manual --all-files
 ```
 
-Full output can include multiple issue types:
+Full output can include multiple issue types (`--methods` adds the method section):
 
 ```text
 Found 2 public symbols that could be made private:
