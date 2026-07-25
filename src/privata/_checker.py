@@ -11,7 +11,11 @@ from privata._imports import (
     collect_private_symbol_imports,
     find_cross_imports,
 )
-from privata._methods import collect_method_candidates, referenced_names_by_module
+from privata._methods import (
+    collect_method_candidates,
+    collect_package_reexports,
+    referenced_names_by_module,
+)
 from privata._modules import collect_module_collisions, collect_modules, collect_test_consumers
 from privata._source_roots import is_test_source_root, source_roots
 
@@ -104,10 +108,7 @@ def _collect_privacy_findings(project_root: Path) -> _PrivacyFindings:
     )
     external_entrypoints = collect_external_entrypoints(project_root)
     public_interface_exports = load_tach_interface_exports(project_root)
-    package_modules = {
-        name: module for name, module in modules.items() if module.path.name == "__init__.py"
-    }
-    package_reexports = find_cross_imports(modules, package_modules)
+    package_reexports = collect_package_reexports(modules)
 
     candidates = [
         sym
