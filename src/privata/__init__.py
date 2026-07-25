@@ -7,6 +7,7 @@ from privata._checker import (
     find_private_candidates,
     find_private_module_imports,
     find_private_symbol_imports,
+    find_unparsable_modules,
 )
 from privata._imports import (
     collect_private_module_imports,
@@ -22,8 +23,13 @@ from privata._models import (
     PrivateModuleImport,
     PrivateSymbolImport,
     Symbol,
+    UnparsableModule,
 )
-from privata._modules import collect_module_collisions, collect_modules
+from privata._modules import (
+    collect_module_collisions,
+    collect_modules,
+    collect_unparsable_modules,
+)
 
 try:
     from privata._version import __version__
@@ -38,12 +44,14 @@ __all__ = [
     "PrivateModuleImport",
     "PrivateSymbolImport",
     "Symbol",
+    "UnparsableModule",
     "__version__",
     "collect_method_candidates",
     "collect_module_collisions",
     "collect_modules",
     "collect_private_module_imports",
     "collect_private_symbol_imports",
+    "collect_unparsable_modules",
     "find_cross_imports",
     "find_export_issues",
     "find_method_candidates",
@@ -51,4 +59,5 @@ __all__ = [
     "find_private_candidates",
     "find_private_module_imports",
     "find_private_symbol_imports",
+    "find_unparsable_modules",
 ]

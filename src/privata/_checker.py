@@ -16,7 +16,12 @@ from privata._methods import (
     collect_package_reexports,
     referenced_names_by_module,
 )
-from privata._modules import collect_module_collisions, collect_modules, collect_test_consumers
+from privata._modules import (
+    collect_module_collisions,
+    collect_modules,
+    collect_test_consumers,
+    collect_unparsable_modules,
+)
 from privata._source_roots import is_test_source_root, source_roots
 
 if TYPE_CHECKING:
@@ -31,12 +36,14 @@ if TYPE_CHECKING:
         PrivateModuleImport,
         PrivateSymbolImport,
         Symbol,
+        UnparsableModule,
     )
 
 
 class _PrivacyFindings(NamedTuple):
     """All findings produced by one scan of a project."""
 
+    unparsable_modules: list[UnparsableModule]
     candidates: list[Symbol]
     method_candidates: list[Method]
     private_module_imports: list[PrivateModuleImport]
@@ -120,6 +127,7 @@ def _collect_privacy_findings(project_root: Path) -> _PrivacyFindings:
     ]
     candidates.sort(key=lambda s: (str(s.path), s.lineno))
     return _PrivacyFindings(
+        unparsable_modules=collect_unparsable_modules(roots),
         candidates=candidates,
         method_candidates=collect_method_candidates(
             modules,
@@ -131,6 +139,11 @@ def _collect_privacy_findings(project_root: Path) -> _PrivacyFindings:
         export_issues=collect_export_issues(modules),
         module_collisions=collect_module_collisions(roots),
     )
+
+
+def find_unparsable_modules(project_root: Path) -> list[UnparsableModule]:
+    """Find production source files that could not be parsed."""
+    return _collect_privacy_findings(project_root).unparsable_modules
 
 
 def find_private_candidates(project_root: Path) -> list[Symbol]:
@@ -170,6 +183,10 @@ def check_project(project_root: Path) -> int:
 
     sections: list[tuple[bool, Callable[[], None]]] = [
         (
+            bool(findings.unparsable_modules),
+            lambda: _print_unparsable_modules(findings.unparsable_modules, project_root),
+        ),
+        (
             bool(findings.module_collisions),
             lambda: _print_module_collisions(findings.module_collisions, project_root),
         ),
@@ -205,6 +222,20 @@ def check_project(project_root: Path) -> int:
         printer()
 
     return 1
+
+
+def _print_unparsable_modules(
+    unparsable: list[UnparsableModule],
+    project_root: Path,
+) -> None:
+    print(
+        f"Found {len(unparsable)} source files that could not be parsed; "
+        "they were skipped, so the names they reference stop counting and "
+        "every finding below may be wrong:\n",
+    )
+    for module in unparsable:
+        rel = module.path.relative_to(project_root).as_posix()
+        print(f"  {rel}:{module.lineno}: {module.message}")
 
 
 def _print_module_collisions(collisions: list[ModuleCollision], project_root: Path) -> None:

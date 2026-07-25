@@ -15,6 +15,7 @@ from privata import (
     find_private_candidates,
     find_private_module_imports,
     find_private_symbol_imports,
+    find_unparsable_modules,
 )
 from privata._exports import collect_export_issues
 from privata._imports import (
@@ -2058,6 +2059,61 @@ def test_duplicate_source_roots_are_not_collisions(tmp_path: Path) -> None:
         'source_roots = ["src", "src"]\n',
     )
     assert _module_collisions(tmp_path) == {}
+
+
+def test_unparsable_file_is_reported(tmp_path: Path) -> None:
+    """A file that cannot be parsed is reported with its position and reason."""
+    _write(tmp_path / "src" / "pkg" / "__init__.py", "")
+    _write(tmp_path / "src" / "pkg" / "broken.py", "def oops(:\n    pass\n")
+
+    unparsable = find_unparsable_modules(tmp_path)
+
+    assert [(module.module, module.lineno) for module in unparsable] == [("pkg.broken", 1)]
+    assert unparsable[0].path == tmp_path / "src" / "pkg" / "broken.py"
+    assert unparsable[0].message
+
+
+def test_parsable_project_reports_no_unparsable_files(tmp_path: Path) -> None:
+    """A project that parses cleanly reports nothing."""
+    _write(tmp_path / "src" / "pkg" / "__init__.py", "")
+    _write(tmp_path / "src" / "pkg" / "service.py", "def run() -> int:\n    return 1\n")
+
+    assert find_unparsable_modules(tmp_path) == []
+
+
+def test_unparsable_file_alone_fails_the_check(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An unparsable file is a finding on its own, even with nothing else to report."""
+    _write(tmp_path / "src" / "pkg" / "__init__.py", "")
+    _write(tmp_path / "src" / "pkg" / "broken.py", "def oops(:\n    pass\n")
+
+    assert cli_main([str(tmp_path)]) == 1
+    assert "could not be parsed" in capsys.readouterr().out
+
+
+def test_cli_reports_unparsable_files_before_other_findings(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Unparsable files are printed first, because they invalidate everything after."""
+    _write(tmp_path / "src" / "pkg" / "__init__.py", "")
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        "class Service:\n    def work(self) -> int:\n        return 1\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "app.py",
+        "from pkg.service import Service\n\n\ndef go() -> int:\n    return Service().work()\n"
+        "\n\ndef oops(:\n    pass\n",
+    )
+
+    assert cli_main([str(tmp_path)]) == 1
+    output = capsys.readouterr().out
+    assert "Found 1 source files that could not be parsed" in output
+    assert "src/pkg/app.py:8:" in output
+    assert output.index("could not be parsed") < output.index("could be made private")
 
 
 def test_cli_reports_module_collisions_before_other_findings(

@@ -55,6 +55,16 @@ class ModuleCollision:
 
 
 @dataclass
+class UnparsableModule:
+    """A source file that could not be parsed, so its references were not seen."""
+
+    module: str
+    path: Path
+    lineno: int
+    message: str
+
+
+@dataclass
 class PrivateModuleImport:
     """A private module imported from outside its containing package subtree."""
 

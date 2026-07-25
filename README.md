@@ -136,6 +136,7 @@ No module privacy issues found.
 - Symbols exported through package `__init__.py` and `__all__`.
 - Tach `[[interfaces]]` entries, when `tach.toml` is present.
 - Module names defined by more than one file across source roots (e.g. `src/utils.py` next to `tests/utils.py`, or `pkg.py` next to `pkg/__init__.py`). Such names are ambiguous at import time and only one file per name can be scanned, so Privata reports the collision instead of silently picking one.
+- Source files that cannot be parsed. A skipped file stops contributing references, so unrelated modules gain findings that are not real while genuine findings disappear. Privata reports the file first and fails the check, rather than reporting results it cannot stand behind. The usual cause is running Privata on an interpreter older than the syntax in the project, such as scanning a project that uses `type X = ...` on Python 3.11.
 
 ### Methods
 

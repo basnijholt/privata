@@ -5,7 +5,13 @@ from __future__ import annotations
 import ast
 from typing import TYPE_CHECKING
 
-from privata._models import Module, ModuleCollision, Symbol, SymbolCandidate
+from privata._models import (
+    Module,
+    ModuleCollision,
+    Symbol,
+    SymbolCandidate,
+    UnparsableModule,
+)
 from privata._source_roots import (
     is_in_ignored_directory,
     is_test_module_filename,
@@ -175,6 +181,41 @@ def collect_module_collisions(source_roots: list[Path]) -> list[ModuleCollision]
         for name, paths in sorted(paths_by_name.items())
         if len(paths) > 1
     ]
+
+
+def collect_unparsable_modules(source_roots: list[Path]) -> list[UnparsableModule]:
+    """Return production source files that could not be parsed.
+
+    An unparsable file is dropped from the scan, and every name it referenced
+    stops counting. That does not merely hide findings in the dropped file: the
+    imports and attribute accesses it made no longer keep anything public, so
+    unrelated modules gain findings that are not real. Reporting the file lets
+    the caller see that the rest of the results cannot be trusted.
+
+    The usual cause is an interpreter older than the syntax in the project, such
+    as scanning a project that uses ``type X = ...`` on Python 3.11.
+    """
+    unparsable: list[UnparsableModule] = []
+    for source_root in source_roots:
+        for py_file in sorted(source_root.rglob("*.py")):
+            if should_skip_source_file(py_file, source_root):
+                continue
+            mod_name = _module_name_from_path(py_file, source_root)
+            if mod_name is None:
+                continue
+            source = py_file.read_text(encoding="utf-8")
+            try:
+                ast.parse(source, filename=str(py_file))
+            except SyntaxError as error:
+                unparsable.append(
+                    UnparsableModule(
+                        module=mod_name,
+                        path=py_file,
+                        lineno=error.lineno or 0,
+                        message=error.msg,
+                    ),
+                )
+    return unparsable
 
 
 def collect_test_consumers(test_source_roots: list[Path]) -> dict[str, Module]:
