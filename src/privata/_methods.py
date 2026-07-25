@@ -123,19 +123,38 @@ def _collect_scoped_references(  # noqa: C901
     references: dict[str, set[str]],
 ) -> None:
     """Collect references while applying bindings in source order within each scope."""
-    deferred_functions: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
+    deferred_functions: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = {}
+    invoked_functions: set[str] = set()
     for node in statements:
         if isinstance(node, ast.Import):
             _apply_import_bindings(node, known_modules, bindings)
         elif isinstance(node, ast.ImportFrom):
             _apply_import_from_bindings(node, package_parts, known_modules, bindings)
         elif isinstance(node, ast.Assign):
+            _analyze_function_calls(
+                node.value,
+                deferred_functions,
+                invoked_functions,
+                bindings,
+                package_parts,
+                known_modules,
+                references,
+            )
             _record_references(node.value, bindings, references)
             sources = _expression_modules(node.value, bindings)
             _bind_targets(node.targets, sources, bindings)
         elif isinstance(node, ast.AnnAssign):
             ann_sources: set[str] = set()
             if node.value is not None:
+                _analyze_function_calls(
+                    node.value,
+                    deferred_functions,
+                    invoked_functions,
+                    bindings,
+                    package_parts,
+                    known_modules,
+                    references,
+                )
                 _record_references(node.value, bindings, references)
                 ann_sources = _expression_modules(node.value, bindings)
             _bind_targets([node.target], ann_sources, bindings)
@@ -148,33 +167,91 @@ def _collect_scoped_references(  # noqa: C901
             ]
             for expression in signature:
                 if expression is not None:
+                    _analyze_function_calls(
+                        expression,
+                        deferred_functions,
+                        invoked_functions,
+                        bindings,
+                        package_parts,
+                        known_modules,
+                        references,
+                    )
                     _record_references(expression, bindings, references)
-            deferred_functions.append(node)
+            deferred_functions[node.name] = node
             bindings[node.name] = set()
         else:
+            _analyze_function_calls(
+                node,
+                deferred_functions,
+                invoked_functions,
+                bindings,
+                package_parts,
+                known_modules,
+                references,
+            )
             _record_references(node, bindings, references)
 
-    for function in deferred_functions:
-        local_bindings = {name: set(sources) for name, sources in bindings.items()}
-        arguments = {
-            argument.arg
-            for argument in [
-                *function.args.posonlyargs,
-                *function.args.args,
-                *function.args.kwonlyargs,
-                function.args.vararg,
-                function.args.kwarg,
-            ]
-            if argument is not None
-        }
-        local_bindings.update({name: set() for name in arguments})
-        _collect_scoped_references(
-            function.body,
-            local_bindings,
-            package_parts,
-            known_modules,
-            references,
-        )
+    for name, function in deferred_functions.items():
+        if name not in invoked_functions:
+            _analyze_function(
+                function,
+                bindings,
+                package_parts,
+                known_modules,
+                references,
+            )
+
+
+def _analyze_function_calls(  # noqa: PLR0913
+    root: ast.AST,
+    functions: Mapping[str, ast.FunctionDef | ast.AsyncFunctionDef],
+    invoked_functions: set[str],
+    bindings: Mapping[str, set[str]],
+    package_parts: tuple[str, ...],
+    known_modules: Mapping[str, Module],
+    references: dict[str, set[str]],
+) -> None:
+    for node in ast.walk(root):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            function = functions.get(node.func.id)
+            if function is not None:
+                invoked_functions.add(node.func.id)
+                _analyze_function(
+                    function,
+                    bindings,
+                    package_parts,
+                    known_modules,
+                    references,
+                )
+
+
+def _analyze_function(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    bindings: Mapping[str, set[str]],
+    package_parts: tuple[str, ...],
+    known_modules: Mapping[str, Module],
+    references: dict[str, set[str]],
+) -> None:
+    local_bindings = {name: set(sources) for name, sources in bindings.items()}
+    arguments = {
+        argument.arg
+        for argument in [
+            *function.args.posonlyargs,
+            *function.args.args,
+            *function.args.kwonlyargs,
+            function.args.vararg,
+            function.args.kwarg,
+        ]
+        if argument is not None
+    }
+    local_bindings.update({name: set() for name in arguments})
+    _collect_scoped_references(
+        function.body,
+        local_bindings,
+        package_parts,
+        known_modules,
+        references,
+    )
 
 
 def _record_references(
@@ -368,7 +445,7 @@ def _decorator_name(decorator: ast.expr, aliases: Mapping[str, str]) -> str | No
     return dotted
 
 
-def _decorator_aliases(  # noqa: C901
+def _decorator_aliases(  # noqa: C901, PLR0912
     tree: ast.Module,
     before_lineno: int,
 ) -> dict[str, str]:
@@ -396,6 +473,10 @@ def _decorator_aliases(  # noqa: C901
                 for child in ast.walk(target):
                     if isinstance(child, ast.Name):
                         aliases[child.id] = f"{_LOCAL_DECORATOR_PREFIX}.{child.id}"
+        else:
+            for child in ast.walk(node):
+                if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Store):
+                    aliases[child.id] = f"{_LOCAL_DECORATOR_PREFIX}.{child.id}"
     return aliases
 
 

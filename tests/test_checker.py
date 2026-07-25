@@ -2276,6 +2276,8 @@ from .registry import property
 
 functools = registry
 typing.final = registry.final
+for functools in [registry]:
+    pass
 
 
 @registry.dataclass
@@ -2649,6 +2651,40 @@ def test_run() -> None:
 
 
 from used_helper import Helper
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "tach.toml",
+        'source_roots = ["tests"]\n',
+    )
+
+    assert _methods(tmp_path) == {("unused_helper", "Helper", "run")}
+
+
+def test_module_invocation_uses_bindings_at_call_time(tmp_path: Path) -> None:
+    """A direct module call uses bindings present before a later reimport."""
+    _write(
+        tmp_path / "tests" / "used_helper.py",
+        "class Helper:\n    def run(self) -> int:\n        return 1\n",
+    )
+    _write(
+        tmp_path / "tests" / "unused_helper.py",
+        "class Helper:\n    def run(self) -> int:\n        return 2\n",
+    )
+    _write(
+        tmp_path / "tests" / "test_used_helper.py",
+        """
+from used_helper import Helper
+
+
+def exercise() -> None:
+    assert Helper().run() == 1
+
+
+exercise()
+
+from unused_helper import Helper
 """.strip()
         + "\n",
     )
