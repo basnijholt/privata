@@ -1362,8 +1362,17 @@ def _helper() -> int:
     assert cli_exit.value.code == 0
 
 
-def test_cli_uses_argparse_for_help(capsys: pytest.CaptureFixture[str]) -> None:
-    """The console wrapper should expose argparse help without running checks."""
+def test_cli_uses_argparse_for_help(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The console wrapper should expose argparse help without running checks.
+
+    Python 3.14 colours argparse help, so the assertions below would trip over
+    escape sequences. ``NO_COLOR`` pins the output to the plain form without
+    changing what a user sees.
+    """
+    monkeypatch.setenv("NO_COLOR", "1")
     with pytest.raises(SystemExit) as cli_exit:
         cli_main(["--help"])
 

@@ -73,17 +73,19 @@ Use Privata as a pre-commit hook in another repository:
 ```yaml
 repos:
   - repo: https://github.com/basnijholt/privata
-    rev: v0.1.2
+    rev: v0.6.0
     hooks:
       - id: privata
 ```
+
+Run `pre-commit autoupdate` to move `rev` to the newest release.
 
 For a less strict setup that only runs when requested:
 
 ```yaml
 repos:
   - repo: https://github.com/basnijholt/privata
-    rev: v0.1.2
+    rev: v0.6.0
     hooks:
       - id: privata-manual
 ```
