@@ -76,6 +76,7 @@ The name of a method can belong to something Privata cannot see, such as a frame
 Privata skips:
 
 - classes with a base class other than `object`, since the base may define the method contract
+- classes that another class in the project subclasses, since a subclass may override the method and renaming the base method would strand that override under its old name
 - classes with class keywords such as `metaclass=`
 - classes with decorators other than `@dataclass` and `@final`
 - private classes, classes listed in `__all__`, classes re-exported by package `__init__.py`, and classes exposed through entry points or a Tach interface

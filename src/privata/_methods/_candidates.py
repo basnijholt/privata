@@ -61,6 +61,7 @@ def collect_method_candidates(
     interface = public_interface if public_interface is not None else set()
     extra_references = test_references if test_references is not None else {}
     references = _references_by_module(modules)
+    base_names = _base_class_names(modules)
 
     candidates: list[Method] = []
     for module in modules.values():
@@ -70,7 +71,7 @@ def collect_method_candidates(
             if not isinstance(node, ast.ClassDef):
                 continue
             decorator_aliases = _decorator_aliases(module.tree, node.lineno)
-            if not _is_checkable_class(node, module, interface, decorator_aliases):
+            if not _is_checkable_class(node, module, interface, decorator_aliases, base_names):
                 continue
             candidates.extend(
                 _class_method_candidates(
@@ -107,6 +108,42 @@ def _references_by_module(modules: Mapping[str, Module]) -> dict[str, set[str]]:
         for name in _referenced_names(module):
             references.setdefault(name, set()).add(module_name)
     return references
+
+
+def _base_class_names(modules: Mapping[str, Module]) -> frozenset[str]:
+    """Return every name that any class in the project uses as a base.
+
+    A subclass that only overrides a method never mentions the name as an
+    attribute, so the reference scan cannot see it. Renaming the base method
+    would leave the override stranded under its old name, so a class that
+    anything subclasses keeps its methods public.
+    """
+    names: set[str] = set()
+    for module in modules.values():
+        if module.tree is None:
+            continue
+        for node in ast.walk(module.tree):
+            if isinstance(node, ast.ClassDef):
+                names.update(_referenced_base_names(node.bases))
+    return frozenset(names)
+
+
+def _referenced_base_names(bases: list[ast.expr]) -> set[str]:
+    """Return the trailing names of every base expression.
+
+    Bases are matched by trailing name, so ``Base``, ``mod.Base`` and the
+    subscripted ``Base[int]`` all protect a class named ``Base``. Matching is
+    deliberately loose: over-matching only suppresses reports, which is the
+    safe direction.
+    """
+    names: set[str] = set()
+    for base in bases:
+        for node in ast.walk(base):
+            if isinstance(node, ast.Name):
+                names.add(node.id)
+            elif isinstance(node, ast.Attribute):
+                names.add(node.attr)
+    return names
 
 
 def _class_method_candidates(
@@ -191,16 +228,20 @@ def _is_checkable_class(
     module: Module,
     public_interface: set[tuple[str, str]],
     decorator_aliases: Mapping[str, str],
+    base_class_names: frozenset[str],
 ) -> bool:
     """Return whether a class owns its method names outright.
 
-    Only plain, public, non-exported classes qualify. A base class Privata
-    cannot see may require a method to keep its public name, and an exported
-    class exposes its methods as part of the package interface.
+    Only plain, public, non-exported, non-subclassed classes qualify. A base
+    class Privata cannot see may require a method to keep its public name, an
+    exported class exposes its methods as part of the package interface, and a
+    class with subclasses owes its method names to those overrides.
     """
     if node.name.startswith("_"):
         return False
     if node.name in module.exports or (module.name, node.name) in public_interface:
+        return False
+    if node.name in base_class_names:
         return False
     if node.keywords:
         return False

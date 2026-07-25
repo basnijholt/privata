@@ -147,6 +147,7 @@ Because a method name can be owned by something Privata cannot see, the method c
 It skips:
 
 - classes with a base class other than `object`, since the base may define the contract
+- classes that another class in the project subclasses, since renaming a base method would strand the override under its old name
 - classes with class keywords such as `metaclass=`, and classes with decorators other than `@dataclass` and `@final`
 - private classes, classes listed in `__all__`, classes re-exported by package `__init__.py`, and classes exposed through entry points or Tach interfaces
 - methods with decorators other than `@property`, `@staticmethod`, `@classmethod`, `@cached_property`, `@cache`, `@lru_cache`, and `@final`, since another decorator may register the method under its current name

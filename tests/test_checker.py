@@ -2820,6 +2820,136 @@ def build() -> type:
     assert _methods(tmp_path) == set()
 
 
+def test_subclassed_class_methods_are_not_flagged(tmp_path: Path) -> None:
+    """A subclass that only overrides a method keeps the base method public."""
+    _write(
+        tmp_path / "src" / "pkg" / "base.py",
+        """
+class Base:
+    def run(self) -> int:
+        return self.step()
+
+    def step(self) -> int:
+        raise NotImplementedError
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "child.py",
+        """
+from pkg.base import Base
+
+
+class Child(Base):
+    def step(self) -> int:
+        return 2
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == set()
+
+
+def test_subclassed_class_in_the_same_module_keeps_methods_public(tmp_path: Path) -> None:
+    """An override in the defining module protects the base method too."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        """
+class Base:
+    def run(self) -> int:
+        return self.step()
+
+    def step(self) -> int:
+        return 1
+
+
+class Child(Base):
+    def step(self) -> int:
+        return 2
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == set()
+
+
+def test_subscripted_base_protects_the_base_class(tmp_path: Path) -> None:
+    """A generic base such as ``Base[int]`` still protects ``Base``."""
+    _write(
+        tmp_path / "src" / "pkg" / "base.py",
+        """
+class Base:
+    def __class_getitem__(cls, item: object) -> type:
+        return cls
+
+    def step(self) -> int:
+        return 1
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "child.py",
+        """
+from pkg.base import Base
+
+
+class Child(Base[int]):
+    def step(self) -> int:
+        return 2
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == set()
+
+
+def test_dotted_base_protects_the_base_class(tmp_path: Path) -> None:
+    """A base referenced as ``module.Base`` protects ``Base`` as well."""
+    _write(
+        tmp_path / "src" / "pkg" / "base.py",
+        "class Base:\n    def step(self) -> int:\n        return 1\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "child.py",
+        """
+from pkg import base
+
+
+class Child(base.Base):
+    def step(self) -> int:
+        return 2
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == set()
+
+
+def test_unsubclassed_class_methods_are_still_flagged(tmp_path: Path) -> None:
+    """Sharing a module with an unrelated subclass does not protect a class."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        """
+class Other:
+    def step(self) -> int:
+        return 1
+
+
+class Service:
+    def helper(self) -> int:
+        return 2
+
+
+class Child(Other):
+    def step(self) -> int:
+        return 3
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == {("pkg.service", "Service", "helper")}
+
+
 def test_test_source_root_test_files_certify_helper_methods(tmp_path: Path) -> None:
     """Test files certify methods of helper modules in their own test source root."""
     _write(
