@@ -79,7 +79,7 @@ Privata skips:
 - classes that another class in the project subclasses, since a subclass may override the method and renaming the base method would strand that override under its old name
 - classes with class keywords such as `metaclass=`
 - classes with decorators other than `@dataclass` and `@final`
-- private classes, classes listed in `__all__`, classes re-exported by package `__init__.py`, and classes exposed through entry points or a Tach interface
+- private classes, classes listed in `__all__`, classes re-exported by a package `__init__.py` or named in another module's `__all__`, and classes exposed through entry points or a Tach interface
 - classes nested inside functions or other classes
 - dunder methods and methods that are already private
 - methods carrying any decorator other than `@property`, `@staticmethod`, `@classmethod`, `@cached_property`, `@cache`, `@lru_cache`, and `@final`
@@ -116,7 +116,7 @@ Tests are ignored, so tests can still import internals without making them publi
 The following keep a symbol public:
 
 - another module under a production source root imports the symbol, or refers to the method name
-- a package `__init__.py` re-exports the symbol
+- a package `__init__.py` re-exports the symbol, or a facade module imports it and names it in `__all__`
 - a literal `__all__` includes the symbol
 - `pyproject.toml` lists the symbol as a console or GUI script entry point
 - a shell script or Dockerfile launches the symbol as a Uvicorn app
