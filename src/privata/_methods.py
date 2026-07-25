@@ -1042,10 +1042,26 @@ def _is_checkable_method(
 ) -> bool:
     if node.name.startswith("_"):
         return False
+    if _forwards_to_same_named_super_method(node):
+        return False
     return _has_only_safe_decorators(
         node.decorator_list,
         _SAFE_METHOD_DECORATORS,
         decorator_aliases,
+    )
+
+
+def _forwards_to_same_named_super_method(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> bool:
+    """Return whether a method participates in a cooperative super call."""
+    return any(
+        isinstance(child, ast.Attribute)
+        and child.attr == node.name
+        and isinstance(child.value, ast.Call)
+        and isinstance(child.value.func, ast.Name)
+        and child.value.func.id == "super"
+        for child in ast.walk(node)
     )
 
 

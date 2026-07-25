@@ -2202,6 +2202,27 @@ class Service(ABC):
     assert _methods(tmp_path) == set()
 
 
+def test_same_named_super_method_is_not_flagged(tmp_path: Path) -> None:
+    """A cooperative mixin method must keep the name used by the next MRO class."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        """
+class ChatToolArgumentsCompat:
+    def parse_tool_calls(self, value: object) -> object:
+        parsed = super().parse_tool_calls(value)
+        return parsed
+
+    def local_helper(self) -> int:
+        return 1
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == {
+        ("pkg.service", "ChatToolArgumentsCompat", "local_helper"),
+    }
+
+
 def test_methods_of_classes_with_class_keywords_are_not_flagged(tmp_path: Path) -> None:
     """Class keyword arguments such as metaclass= signal an external contract."""
     _write(

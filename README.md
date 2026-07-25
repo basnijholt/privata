@@ -141,6 +141,7 @@ No module privacy issues found.
 
 A public method is reported when no other production module mentions its name, either as an attribute access such as `service.helper()` or as a string literal such as `getattr(service, "helper")`.
 Use inside the defining module does not keep a method public, exactly as for top-level symbols.
+Matching is intentionally name-based rather than receiver-aware, so an unrelated attribute with the same name in another module conservatively suppresses the report.
 
 Because a method name can be owned by something Privata cannot see, the method check only looks at plain classes.
 It skips:
@@ -149,6 +150,7 @@ It skips:
 - classes with class keywords such as `metaclass=`, and classes with decorators other than `@dataclass` and `@final`
 - private classes, classes listed in `__all__`, classes re-exported by package `__init__.py`, and classes exposed through entry points or Tach interfaces
 - methods with decorators other than `@property`, `@staticmethod`, `@classmethod`, `@cached_property`, `@cache`, `@lru_cache`, and `@final`, since another decorator may register the method under its current name
+- methods that call the same method through `super()`, since cooperative mixins must preserve that name
 - dunder methods, methods that are already private, and classes nested inside functions or other classes
 
 Privata intentionally ignores imports from `tests/`.

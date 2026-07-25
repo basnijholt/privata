@@ -70,6 +70,7 @@ class Service:
 If another module calls `Service().run()` but nothing outside `service.py` mentions `helper`, Privata reports `helper` as a candidate for `_helper`.
 A method counts as used when another production module accesses the name as an attribute, such as `service.helper()`, or names it in a string literal, such as `getattr(service, "helper")`.
 As with top-level symbols, use inside the defining module does not keep a method public, and use from tests does not either.
+Matching is intentionally name-based rather than receiver-aware, so an unrelated attribute with the same name in another module conservatively suppresses the report.
 
 The name of a method can belong to something Privata cannot see, such as a framework base class or a registry, so the check only inspects plain classes and undecorated methods.
 Privata skips:
@@ -81,6 +82,7 @@ Privata skips:
 - classes nested inside functions or other classes
 - dunder methods and methods that are already private
 - methods carrying any decorator other than `@property`, `@staticmethod`, `@classmethod`, `@cached_property`, `@cache`, `@lru_cache`, and `@final`
+- methods that call the same method through `super()`, since cooperative mixins must preserve that name
 
 The last rule is what keeps route handlers, Pydantic validators, pytest fixtures, and Celery tasks out of the report: those methods are registered under their current name by a decorator.
 
