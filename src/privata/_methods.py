@@ -244,12 +244,27 @@ def _collect_scoped_references(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 known_modules,
                 references,
             )
-            _bind_targets([node.target], set(), bindings, functions)
+            sources = _expression_modules(node.target, bindings) | _expression_modules(
+                node.value,
+                bindings,
+            )
+            _bind_targets([node.target], sources, bindings, functions)
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             signature = [
                 *node.decorator_list,
                 *node.args.defaults,
                 *(default for default in node.args.kw_defaults if default is not None),
+                *(
+                    argument.annotation
+                    for argument in [
+                        *node.args.posonlyargs,
+                        *node.args.args,
+                        *node.args.kwonlyargs,
+                        node.args.vararg,
+                        node.args.kwarg,
+                    ]
+                    if argument is not None and argument.annotation is not None
+                ),
                 node.returns,
             ]
             for expression in signature:
@@ -874,21 +889,42 @@ def _class_method_candidates(
         )
 
 
-def _protected_method_nodes(class_node: ast.ClassDef) -> set[int]:
+def _protected_method_nodes(class_node: ast.ClassDef) -> set[int]:  # noqa: C901
     """Return methods whose class binding is consumed or replaced later."""
     current_methods: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = {}
     protected: set[int] = set()
     for node in class_node.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            for decorator in node.decorator_list:
-                for child in ast.walk(decorator):
-                    if isinstance(child, ast.Name) and child.id in current_methods:
-                        protected.add(id(current_methods[child.id]))
+            header = [
+                *node.decorator_list,
+                *node.args.defaults,
+                *(default for default in node.args.kw_defaults if default is not None),
+                *(
+                    argument.annotation
+                    for argument in [
+                        *node.args.posonlyargs,
+                        *node.args.args,
+                        *node.args.kwonlyargs,
+                        node.args.vararg,
+                        node.args.kwarg,
+                    ]
+                    if argument is not None and argument.annotation is not None
+                ),
+                node.returns,
+            ]
+            for expression in header:
+                if expression is not None:
+                    for name in _loaded_names(expression):
+                        if name in current_methods:
+                            protected.add(id(current_methods[name]))
             previous = current_methods.get(node.name)
             if previous is not None:
                 protected.add(id(previous))
             current_methods[node.name] = node
             continue
+        for name in _loaded_names(node):
+            if name in current_methods:
+                protected.add(id(current_methods[name]))
         for name in _bound_names(node):
             previous = current_methods.pop(name.split(".", 1)[0], None)
             if previous is not None:
@@ -1055,6 +1091,35 @@ class _BoundNameCollector(ast.NodeVisitor):
 
 def _bound_names(node: ast.stmt) -> set[str]:
     collector = _BoundNameCollector()
+    collector.visit(node)
+    return collector.names
+
+
+class _LoadedNameCollector(ast.NodeVisitor):
+    """Collect class-scope reads without entering nested scopes."""
+
+    def __init__(self) -> None:
+        self.names: set[str] = set()
+
+    def visit_Name(self, node: ast.Name) -> None:
+        if isinstance(node.ctx, ast.Load):
+            self.names.add(node.id)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        del node
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        del node
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        del node
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        del node
+
+
+def _loaded_names(node: ast.AST) -> set[str]:
+    collector = _LoadedNameCollector()
     collector.visit(node)
     return collector.names
 

@@ -2407,6 +2407,25 @@ class Rebound:
         return 5
 
     overwritten = 5
+
+
+class Aliased:
+    def run(self) -> int:
+        return 6
+
+    if ENABLE:
+        def nested():
+            return run
+
+        async def async_nested():
+            return run
+
+        class Nested:
+            pass
+
+        callback = lambda: run
+
+    alias = run
 """.strip()
         + "\n",
     )
@@ -3063,6 +3082,7 @@ def test_test_helper_compound_scopes_update_bindings(tmp_path: Path) -> None:
         "while_call",
         "while_else_call",
         "for_else_call",
+        "augmented_call",
         "with_call",
         "try_call",
         "except_call",
@@ -3085,6 +3105,7 @@ from helper import Helper
 
 alias = Helper
 alias += Helper
+alias.augmented_call()
 
 
 class Container(Helper, metaclass=Helper):
