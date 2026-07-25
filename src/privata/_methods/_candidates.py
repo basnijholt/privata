@@ -243,9 +243,11 @@ def _is_checkable_class(
         or node.name in base_class_names
     ):
         return False
-    if node.keywords or _looks_up_attributes_dynamically(node):
+    if node.keywords or any(
+        _resolved_name(base, decorator_aliases) != "builtins.object" for base in node.bases
+    ):
         return False
-    if any(_resolved_name(base, decorator_aliases) != "builtins.object" for base in node.bases):
+    if _looks_up_attributes_dynamically(node):
         return False
     return _has_only_safe_decorators(
         node.decorator_list,
