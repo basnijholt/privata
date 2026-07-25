@@ -13,7 +13,7 @@ from privata._imports import (
 )
 from privata._methods import (
     collect_method_candidates,
-    collect_package_reexports,
+    collect_reexports,
     referenced_names_by_module,
 )
 from privata._modules import (
@@ -123,7 +123,7 @@ def _collect_privacy_findings(
     )
     external_entrypoints = collect_external_entrypoints(project_root)
     public_interface_exports = load_tach_interface_exports(project_root)
-    package_reexports = collect_package_reexports(modules)
+    package_reexports = collect_reexports(modules)
 
     candidates = [
         sym

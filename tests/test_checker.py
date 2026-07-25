@@ -25,6 +25,7 @@ from privata._imports import (
 )
 from privata._methods import (
     collect_method_candidates,
+    collect_reexports,
     referenced_names_by_module,
 )
 from privata._models import Module
@@ -2749,6 +2750,78 @@ def test_chained_package_reexported_class_methods_are_not_flagged(tmp_path: Path
     assert _methods(tmp_path) == set()
 
 
+def test_facade_module_all_reexports_class_methods(tmp_path: Path) -> None:
+    """A plain module that lists an imported class in __all__ publishes it."""
+    _write(
+        tmp_path / "src" / "pkg" / "__init__.py",
+        "",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "impl.py",
+        "class Service:\n    def run(self) -> int:\n        return 1\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "api.py",
+        'from pkg.impl import Service\n\n__all__ = ["Service"]\n',
+    )
+
+    assert _methods(tmp_path) == set()
+
+
+def test_facade_module_without_all_does_not_reexport(tmp_path: Path) -> None:
+    """Importing a class without naming it in __all__ is use, not publication."""
+    _write(
+        tmp_path / "src" / "pkg" / "__init__.py",
+        "",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "impl.py",
+        "class Service:\n    def run(self) -> int:\n        return 1\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "api.py",
+        "from pkg.impl import Service\n\nservice = Service()\n",
+    )
+
+    assert _methods(tmp_path) == {("pkg.impl", "Service", "run")}
+
+
+def test_facade_module_all_omitting_the_class_does_not_reexport(tmp_path: Path) -> None:
+    """An __all__ that leaves the class out does not publish it."""
+    _write(
+        tmp_path / "src" / "pkg" / "__init__.py",
+        "",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "impl.py",
+        "class Service:\n    def run(self) -> int:\n        return 1\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "api.py",
+        'from pkg.impl import Service\n\nbuilt = Service\n\n__all__ = ["built"]\n',
+    )
+
+    assert _methods(tmp_path) == {("pkg.impl", "Service", "run")}
+
+
+def test_facade_module_star_import_reexports_named_class(tmp_path: Path) -> None:
+    """A star import combined with __all__ publishes the named class."""
+    _write(
+        tmp_path / "src" / "pkg" / "__init__.py",
+        "",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "impl.py",
+        "class Service:\n    def run(self) -> int:\n        return 1\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "api.py",
+        'from pkg.impl import *\n\n__all__ = ["Service"]\n',
+    )
+
+    assert _methods(tmp_path) == set()
+
+
 def test_package_local_imports_do_not_count_as_reexports(tmp_path: Path) -> None:
     """Function-local and TYPE_CHECKING imports do not expose a class."""
     _write(
@@ -3407,6 +3480,7 @@ def test_method_collection_skips_modules_without_a_tree() -> None:
 
     assert referenced_names_by_module(module, {}) == {}
     assert collect_method_candidates({"pkg.mod": module}) == []
+    assert collect_reexports({"pkg.mod": module}) == set()
 
 
 def test_cli_reports_method_candidates(
