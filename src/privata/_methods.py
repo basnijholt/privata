@@ -847,10 +847,14 @@ def _class_method_candidates(
     test_references: set[str],
     decorator_aliases: Mapping[str, str],
 ) -> Iterator[Method]:
+    aliases = dict(decorator_aliases)
     for node in class_node.body:
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            _update_aliases(aliases, node)
             continue
-        if not _is_checkable_method(node, decorator_aliases):
+        checkable = _is_checkable_method(node, aliases)
+        aliases[node.name] = f"{_LOCAL_DECORATOR_PREFIX}.{node.name}"
+        if not checkable:
             continue
         if node.lineno in module.ignored_lines:
             continue
@@ -944,20 +948,24 @@ def _decorator_aliases(
     for node in tree.body:
         if node.lineno >= before_lineno:
             break
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                local = alias.asname or alias.name.split(".", 1)[0]
-                imported = alias.name if alias.asname else local
-                aliases[local] = imported
-        elif isinstance(node, ast.ImportFrom):
-            source = f"{'.' * node.level}{node.module or ''}"
-            for alias in node.names:
-                if alias.name != "*":
-                    aliases[alias.asname or alias.name] = f"{source}.{alias.name}"
-        else:
-            for name in _bound_names(node):
-                aliases[name] = f"{_LOCAL_DECORATOR_PREFIX}.{name}"
+        _update_aliases(aliases, node)
     return aliases
+
+
+def _update_aliases(aliases: dict[str, str], node: ast.stmt) -> None:
+    if isinstance(node, ast.Import):
+        for alias in node.names:
+            local = alias.asname or alias.name.split(".", 1)[0]
+            imported = alias.name if alias.asname else local
+            aliases[local] = imported
+    elif isinstance(node, ast.ImportFrom):
+        source = f"{'.' * node.level}{node.module or ''}"
+        for alias in node.names:
+            if alias.name != "*":
+                aliases[alias.asname or alias.name] = f"{source}.{alias.name}"
+    else:
+        for name in _bound_names(node):
+            aliases[name] = f"{_LOCAL_DECORATOR_PREFIX}.{name}"
 
 
 class _BoundNameCollector(ast.NodeVisitor):

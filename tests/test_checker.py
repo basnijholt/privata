@@ -2407,6 +2407,41 @@ class Service:
     assert _methods(tmp_path) == {("pkg.service", "Service", "plain")}
 
 
+def test_class_local_decorator_bindings_resolve_in_source_order(tmp_path: Path) -> None:
+    """A class-local assignment only shadows later decorator expressions."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        """
+import registry
+
+
+class Service:
+    @property
+    def builtin_value(self) -> int:
+        return 1
+
+    property = registry.property
+
+    @property
+    def registered_value(self) -> int:
+        return 2
+
+    @external
+    def externally_registered(self) -> int:
+        return 3
+
+    def plain(self) -> int:
+        return 4
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == {
+        ("pkg.service", "Service", "builtin_value"),
+        ("pkg.service", "Service", "plain"),
+    }
+
+
 def test_unknown_method_decorators_are_skipped(tmp_path: Path) -> None:
     """A decorator may register the method under its current name, so leave it alone."""
     _write(
