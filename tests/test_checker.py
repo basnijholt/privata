@@ -22,7 +22,10 @@ from privata._imports import (
     collect_private_symbol_imports,
     find_cross_imports,
 )
-from privata._methods import collect_method_candidates, referenced_names
+from privata._methods import (
+    collect_method_candidates,
+    referenced_names_by_module,
+)
 from privata._models import Module
 from privata.cli import main as cli_main
 
@@ -2481,7 +2484,40 @@ class Helper:
     _write(
         tmp_path / "tests" / "test_blah.py",
         """
-from something import Helper
+import something
+
+
+def test_value() -> None:
+    assert getattr(something.Helper(), "get_value")() == 42
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "tach.toml",
+        'source_roots = ["tests"]\n',
+    )
+
+    assert _methods(tmp_path) == {("something", "Helper", "get_unused")}
+
+
+def test_star_imported_test_helper_methods_are_certified(tmp_path: Path) -> None:
+    """Star imports retain methods that co-located tests call."""
+    _write(
+        tmp_path / "tests" / "something.py",
+        """
+class Helper:
+    def get_value(self) -> int:
+        return 42
+
+    def get_unused(self) -> int:
+        return 0
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "tests" / "test_blah.py",
+        """
+from something import *
 
 
 def test_value() -> None:
@@ -2510,11 +2546,15 @@ def test_test_method_references_are_scoped_to_the_imported_helper(tmp_path: Path
     _write(
         tmp_path / "tests" / "test_used_helper.py",
         """
+from unused_helper import Helper as UnusedHelper
 from used_helper import Helper
 
 
 def test_run() -> None:
-    assert Helper().run() == 1
+    unused = UnusedHelper()
+    used: Helper = Helper()
+    assert unused
+    assert used.run() == 1
 """.strip()
         + "\n",
     )
@@ -2551,7 +2591,7 @@ def test_method_collection_skips_modules_without_a_tree() -> None:
     """Modules that failed to parse contribute no methods and no references."""
     module = Module(name="pkg.mod", path=Path("pkg/mod.py"), package_parts=("pkg",))
 
-    assert referenced_names(module) == set()
+    assert referenced_names_by_module(module, {}) == {}
     assert collect_method_candidates({"pkg.mod": module}) == []
 
 

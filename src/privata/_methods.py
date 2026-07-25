@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 from typing import TYPE_CHECKING
 
+from privata._imports import resolve_import_source
 from privata._models import Method
 
 if TYPE_CHECKING:
@@ -80,7 +81,7 @@ def collect_method_candidates(
     return candidates
 
 
-def referenced_names(module: Module) -> set[str]:
+def _referenced_names(module: Module) -> set[str]:
     """Return every attribute name and string literal a module mentions."""
     if module.tree is None:
         return set()
@@ -94,11 +95,116 @@ def referenced_names(module: Module) -> set[str]:
     return names
 
 
+def referenced_names_by_module(  # noqa: C901
+    module: Module,
+    known_modules: Mapping[str, Module],
+) -> dict[str, set[str]]:
+    """Return referenced names attributed to imported modules."""
+    if module.tree is None:
+        return {}
+
+    bindings = _imported_module_bindings(
+        module.tree,
+        module.package_parts,
+        known_modules,
+    )
+    assignments = sorted(
+        (node for node in ast.walk(module.tree) if isinstance(node, (ast.Assign, ast.AnnAssign))),
+        key=lambda node: (node.lineno, node.col_offset),
+    )
+    for assignment in assignments:
+        if assignment.value is not None:
+            sources = _expression_modules(assignment.value, bindings)
+            targets = (
+                assignment.targets if isinstance(assignment, ast.Assign) else [assignment.target]
+            )
+            for target in targets:
+                for child in ast.walk(target):
+                    if isinstance(child, ast.Name):
+                        bindings.setdefault(child.id, set()).update(sources)
+
+    references: dict[str, set[str]] = {}
+    for node in ast.walk(module.tree):
+        if isinstance(node, ast.Attribute):
+            for source in _expression_modules(node.value, bindings):
+                references.setdefault(source, set()).add(node.attr)
+        elif isinstance(node, ast.Call):
+            strings = {
+                value.value
+                for value in [*node.args, *(keyword.value for keyword in node.keywords)]
+                if isinstance(value, ast.Constant) and isinstance(value.value, str)
+            }
+            if strings:
+                expressions = [node.func, *node.args, *(keyword.value for keyword in node.keywords)]
+                sources = {
+                    source
+                    for expression in expressions
+                    for source in _expression_modules(expression, bindings)
+                }
+                for source in sources:
+                    references.setdefault(source, set()).update(strings)
+    return references
+
+
+def _imported_module_bindings(  # noqa: C901
+    tree: ast.Module,
+    package_parts: tuple[str, ...],
+    known_modules: Mapping[str, Module],
+) -> dict[str, set[str]]:
+    """Map names imported by a consumer to their source helper modules."""
+    bindings: dict[str, set[str]] = {}
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name in known_modules:
+                    local = alias.asname or alias.name
+                    bindings.setdefault(local, set()).add(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            source = resolve_import_source(package_parts, node.level, node.module)
+            if source is not None:
+                for alias in node.names:
+                    if alias.name == "*" and source in known_modules:
+                        for symbol in known_modules[source].symbols:
+                            bindings.setdefault(symbol.name, set()).add(source)
+                    elif alias.name != "*":
+                        submodule = f"{source}.{alias.name}"
+                        imported = (
+                            submodule
+                            if submodule in known_modules
+                            else source
+                            if source in known_modules
+                            else None
+                        )
+                        if imported is not None:
+                            bindings.setdefault(alias.asname or alias.name, set()).add(imported)
+    return bindings
+
+
+def _expression_modules(
+    node: ast.AST,
+    bindings: Mapping[str, set[str]],
+) -> set[str]:
+    dotted = _dotted_name(node) if isinstance(node, ast.expr) else None
+    if dotted is not None:
+        parts = dotted.split(".")
+        for index in range(len(parts), 0, -1):
+            sources = bindings.get(".".join(parts[:index]))
+            if sources is not None:
+                return set(sources)
+
+    return {
+        source
+        for child in ast.iter_child_nodes(node)
+        for source in _expression_modules(child, bindings)
+    }
+
+
 def _references_by_module(modules: Mapping[str, Module]) -> dict[str, set[str]]:
     """Map each referenced name to the modules that mention it."""
     references: dict[str, set[str]] = {}
     for module_name, module in modules.items():
-        for name in referenced_names(module):
+        for name in _referenced_names(module):
             references.setdefault(name, set()).add(module_name)
     return references
 

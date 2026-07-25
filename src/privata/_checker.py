@@ -11,7 +11,7 @@ from privata._imports import (
     collect_private_symbol_imports,
     find_cross_imports,
 )
-from privata._methods import collect_method_candidates, referenced_names
+from privata._methods import collect_method_candidates, referenced_names_by_module
 from privata._modules import collect_module_collisions, collect_modules, collect_test_consumers
 from privata._source_roots import is_test_source_root, source_roots
 
@@ -85,16 +85,8 @@ def _test_helper_method_references(
             for name, module in test_consumers.items()
             if module.path.is_relative_to(root)
         }
-        for consumer_name, consumer in consumers.items():
-            imported_helpers = {
-                module_name
-                for module_name, _ in find_cross_imports(
-                    helpers,
-                    {consumer_name: consumer},
-                )
-            }
-            names = referenced_names(consumer)
-            for module_name in imported_helpers:
+        for consumer in consumers.values():
+            for module_name, names in referenced_names_by_module(consumer, helpers).items():
                 references.setdefault(module_name, set()).update(names)
     return references
 

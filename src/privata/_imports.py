@@ -55,7 +55,7 @@ def _module_is_within_package(module_name: str, package_name: str) -> bool:
     return module_name == package_name or module_name.startswith(f"{package_name}.")
 
 
-def _resolve_relative_import(
+def resolve_import_source(
     importer_package: tuple[str, ...],
     level: int,
     module_attr: str | None,
@@ -106,7 +106,7 @@ def find_cross_imports(  # noqa: C901, PLR0912
                         imported_modules.add(alias.name)
 
             elif isinstance(node, ast.ImportFrom):
-                source = _resolve_relative_import(
+                source = resolve_import_source(
                     consumer.package_parts,
                     node.level or 0,
                     node.module,
@@ -252,7 +252,7 @@ def _find_private_symbol_imports_in_module(
         if not isinstance(node, ast.ImportFrom):
             continue
 
-        source = _resolve_relative_import(
+        source = resolve_import_source(
             consumer.package_parts,
             node.level or 0,
             node.module,
@@ -301,7 +301,7 @@ def _private_imports_from_import_from(
     node: ast.ImportFrom,
     private_modules: set[str],
 ) -> set[tuple[str, int]]:
-    source = _resolve_relative_import(
+    source = resolve_import_source(
         consumer.package_parts,
         node.level or 0,
         node.module,
