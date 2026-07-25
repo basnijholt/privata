@@ -18,9 +18,8 @@ from privata._methods import (
 )
 from privata._modules import (
     collect_module_collisions,
-    collect_modules,
+    collect_modules_with_errors,
     collect_test_consumers,
-    collect_unparsable_modules,
 )
 from privata._source_roots import is_test_source_root, source_roots
 
@@ -105,7 +104,7 @@ def _test_helper_method_references(
 def _collect_privacy_findings(project_root: Path) -> _PrivacyFindings:
     """Collect public-symbol and private-module boundary findings."""
     roots = source_roots(project_root)
-    modules = collect_modules(roots)
+    modules, unparsable_modules = collect_modules_with_errors(roots)
     test_roots = [root for root in roots if is_test_source_root(root)]
     test_consumers = collect_test_consumers(test_roots)
     cross_imports = find_cross_imports(modules) | _test_helper_cross_imports(
@@ -127,7 +126,7 @@ def _collect_privacy_findings(project_root: Path) -> _PrivacyFindings:
     ]
     candidates.sort(key=lambda s: (str(s.path), s.lineno))
     return _PrivacyFindings(
-        unparsable_modules=collect_unparsable_modules(roots),
+        unparsable_modules=unparsable_modules,
         candidates=candidates,
         method_candidates=collect_method_candidates(
             modules,

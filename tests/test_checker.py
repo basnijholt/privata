@@ -28,6 +28,8 @@ from privata._methods import (
     referenced_names_by_module,
 )
 from privata._models import Module
+from privata._modules import collect_modules
+from privata._source_roots import source_roots
 from privata.cli import main as cli_main
 
 
@@ -497,6 +499,16 @@ VALUE = 1
     assert ("single", "VALUE") in symbols
     assert ("broken", "broken") not in symbols
     assert ("cached", "CACHED") not in symbols
+
+
+def test_collect_modules_returns_only_the_parsed_modules(tmp_path: Path) -> None:
+    """The public collector drops unparsable files and reports nothing about them."""
+    _write(tmp_path / "src" / "good.py", "VALUE = 1\n")
+    _write(tmp_path / "src" / "broken.py", "def broken(:\n")
+
+    modules = collect_modules(source_roots(tmp_path))
+
+    assert set(modules) == {"good"}
 
 
 def test_annotated_assignments_type_aliases_and_unpacking_are_collected(
