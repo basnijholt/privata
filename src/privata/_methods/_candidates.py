@@ -45,6 +45,9 @@ _BUILTIN_ALIASES = {
     "staticmethod": "builtins.staticmethod",
 }
 _LOCAL_DECORATOR_PREFIX = "<local>"
+# Builtins that reach an attribute by name, so a computed name hides the target.
+_DYNAMIC_LOOKUPS = frozenset({"delattr", "getattr", "hasattr", "setattr"})
+_DYNAMIC_LOOKUP_NAME_POSITION = 2
 
 
 def collect_method_candidates(
@@ -228,16 +231,19 @@ def _is_checkable_class(
 
     Only plain, public, non-exported, non-subclassed classes qualify. A base
     class Privata cannot see may require a method to keep its public name, an
-    exported class exposes its methods as part of the package interface, and a
-    class with subclasses owes its method names to those overrides.
+    exported class exposes its methods as part of the package interface, a
+    class with subclasses owes its method names to those overrides, and a class
+    that looks attributes up by a computed name may reach any of its own
+    methods without ever spelling them out.
     """
-    if node.name.startswith("_"):
+    if (
+        node.name.startswith("_")
+        or node.name in module.exports
+        or (module.name, node.name) in public_interface
+        or node.name in base_class_names
+    ):
         return False
-    if node.name in module.exports or (module.name, node.name) in public_interface:
-        return False
-    if node.name in base_class_names:
-        return False
-    if node.keywords:
+    if node.keywords or _looks_up_attributes_dynamically(node):
         return False
     if any(_resolved_name(base, decorator_aliases) != "builtins.object" for base in node.bases):
         return False
@@ -246,6 +252,31 @@ def _is_checkable_class(
         _SAFE_CLASS_DECORATORS,
         decorator_aliases,
     )
+
+
+def _looks_up_attributes_dynamically(node: ast.ClassDef) -> bool:
+    """Return whether a class reaches attributes by a name it computes.
+
+    ``getattr(self, "visit_" + kind)`` names a method that appears nowhere as a
+    literal, so the reference scan cannot see the call. A class that dispatches
+    this way may reach any of its own methods, and renaming one would break a
+    call the scan never knew about, so none of its methods are checked.
+
+    Only a non-literal second argument counts. ``getattr(self, "run")`` spells
+    the name out and is already picked up as a string reference.
+    """
+    return any(
+        isinstance(child, ast.Call)
+        and isinstance(child.func, ast.Name)
+        and child.func.id in _DYNAMIC_LOOKUPS
+        and len(child.args) >= _DYNAMIC_LOOKUP_NAME_POSITION
+        and not _is_string_literal(child.args[1])
+        for child in ast.walk(node)
+    )
+
+
+def _is_string_literal(node: ast.expr) -> bool:
+    return isinstance(node, ast.Constant) and isinstance(node.value, str)
 
 
 def _is_checkable_method(
