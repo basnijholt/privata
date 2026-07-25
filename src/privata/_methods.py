@@ -39,6 +39,7 @@ _BUILTIN_DECORATORS = {
     "property": "builtins.property",
     "staticmethod": "builtins.staticmethod",
 }
+_LOCAL_DECORATOR_PREFIX = "<local>"
 
 
 def collect_method_candidates(
@@ -61,10 +62,10 @@ def collect_method_candidates(
     for module in modules.values():
         if module.tree is None:
             continue
-        decorator_aliases = _decorator_aliases(module.tree)
         for node in module.tree.body:
             if not isinstance(node, ast.ClassDef):
                 continue
+            decorator_aliases = _decorator_aliases(module.tree, node.lineno)
             if not _is_checkable_class(node, module, interface, decorator_aliases):
                 continue
             candidates.extend(
@@ -121,7 +122,7 @@ def referenced_names_by_module(  # noqa: C901
             for target in targets:
                 for child in ast.walk(target):
                     if isinstance(child, ast.Name):
-                        bindings.setdefault(child.id, set()).update(sources)
+                        bindings[child.id] = set(sources)
 
     references: dict[str, set[str]] = {}
     for node in ast.walk(module.tree):
@@ -159,14 +160,14 @@ def _imported_module_bindings(  # noqa: C901
             for alias in node.names:
                 if alias.name in known_modules:
                     local = alias.asname or alias.name
-                    bindings.setdefault(local, set()).add(alias.name)
+                    bindings[local] = {alias.name}
         elif isinstance(node, ast.ImportFrom):
             source = resolve_import_source(package_parts, node.level, node.module)
             if source is not None:
                 for alias in node.names:
                     if alias.name == "*" and source in known_modules:
                         for symbol in known_modules[source].symbols:
-                            bindings.setdefault(symbol.name, set()).add(source)
+                            bindings[symbol.name] = {source}
                     elif alias.name != "*":
                         submodule = f"{source}.{alias.name}"
                         imported = (
@@ -177,7 +178,7 @@ def _imported_module_bindings(  # noqa: C901
                             else None
                         )
                         if imported is not None:
-                            bindings.setdefault(alias.asname or alias.name, set()).add(imported)
+                            bindings[alias.asname or alias.name] = {imported}
     return bindings
 
 
@@ -289,16 +290,26 @@ def _decorator_name(decorator: ast.expr, aliases: Mapping[str, str]) -> str | No
     dotted = _dotted_name(target)
     if dotted is None:
         return None
-    head, separator, tail = dotted.partition(".")
-    resolved = aliases.get(head, head)
-    return f"{resolved}.{tail}" if separator else resolved
+    parts = dotted.split(".")
+    for index in range(len(parts), 0, -1):
+        prefix = ".".join(parts[:index])
+        resolved = aliases.get(prefix)
+        if resolved is not None:
+            suffix = ".".join(parts[index:])
+            return f"{resolved}.{suffix}" if suffix else resolved
+    return dotted
 
 
-def _decorator_aliases(tree: ast.Module) -> dict[str, str]:  # noqa: C901
+def _decorator_aliases(  # noqa: C901
+    tree: ast.Module,
+    before_lineno: int,
+) -> dict[str, str]:
     """Return canonical module-level names used by decorator expressions."""
     aliases = dict(_BUILTIN_DECORATORS)
 
     for node in tree.body:
+        if node.lineno >= before_lineno:
+            break
         if isinstance(node, ast.Import):
             for alias in node.names:
                 local = alias.asname or alias.name.split(".", 1)[0]
@@ -310,13 +321,13 @@ def _decorator_aliases(tree: ast.Module) -> dict[str, str]:  # noqa: C901
                 if alias.name != "*":
                     aliases[alias.asname or alias.name] = f"{source}.{alias.name}"
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            aliases[node.name] = node.name
+            aliases[node.name] = f"{_LOCAL_DECORATOR_PREFIX}.{node.name}"
         elif isinstance(node, (ast.Assign, ast.AnnAssign)):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             for target in targets:
                 for child in ast.walk(target):
                     if isinstance(child, ast.Name):
-                        aliases[child.id] = child.id
+                        aliases[child.id] = f"{_LOCAL_DECORATOR_PREFIX}.{child.id}"
     return aliases
 
 

@@ -2269,8 +2269,13 @@ def test_custom_decorators_with_safe_basenames_are_skipped(tmp_path: Path) -> No
         tmp_path / "src" / "pkg" / "service.py",
         """
 import registry
+import functools
+import typing
 from registry import final
 from .registry import property
+
+functools = registry
+typing.final = registry.final
 
 
 @registry.dataclass
@@ -2287,6 +2292,14 @@ class Service:
     @property
     def value(self) -> int:
         return 3
+
+    @functools.cache
+    def cached(self) -> int:
+        return 4
+
+    @typing.final
+    def finalized(self) -> int:
+        return 5
 """.strip()
         + "\n",
     )
@@ -2573,6 +2586,36 @@ def test_run() -> None:
     used: Helper = Helper()
     assert unused
     assert used.run() == 1
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "tach.toml",
+        'source_roots = ["tests"]\n',
+    )
+
+    assert _methods(tmp_path) == {("unused_helper", "Helper", "run")}
+
+
+def test_shadowed_test_helper_import_uses_the_last_binding(tmp_path: Path) -> None:
+    """A later import replaces an earlier helper bound to the same local name."""
+    _write(
+        tmp_path / "tests" / "used_helper.py",
+        "class Helper:\n    def run(self) -> int:\n        return 1\n",
+    )
+    _write(
+        tmp_path / "tests" / "unused_helper.py",
+        "class Helper:\n    def run(self) -> int:\n        return 2\n",
+    )
+    _write(
+        tmp_path / "tests" / "test_used_helper.py",
+        """
+from unused_helper import Helper
+from used_helper import Helper
+
+
+def test_run() -> None:
+    assert Helper().run() == 1
 """.strip()
         + "\n",
     )
