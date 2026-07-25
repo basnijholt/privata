@@ -77,12 +77,24 @@ def _test_helper_method_references(
     """
     references: dict[str, set[str]] = {}
     for root in test_roots:
-        names: set[str] = set()
-        for consumer in test_consumers.values():
-            if consumer.path.is_relative_to(root):
-                names |= referenced_names(consumer)
-        for module_name, module in modules.items():
-            if module.path.is_relative_to(root):
+        helpers = {
+            name: module for name, module in modules.items() if module.path.is_relative_to(root)
+        }
+        consumers = {
+            name: module
+            for name, module in test_consumers.items()
+            if module.path.is_relative_to(root)
+        }
+        for consumer_name, consumer in consumers.items():
+            imported_helpers = {
+                module_name
+                for module_name, _ in find_cross_imports(
+                    helpers,
+                    {consumer_name: consumer},
+                )
+            }
+            names = referenced_names(consumer)
+            for module_name in imported_helpers:
                 references.setdefault(module_name, set()).update(names)
     return references
 
@@ -100,6 +112,10 @@ def _collect_privacy_findings(project_root: Path) -> _PrivacyFindings:
     )
     external_entrypoints = collect_external_entrypoints(project_root)
     public_interface_exports = load_tach_interface_exports(project_root)
+    package_modules = {
+        name: module for name, module in modules.items() if module.path.name == "__init__.py"
+    }
+    package_reexports = find_cross_imports(modules, package_modules)
 
     candidates = [
         sym
@@ -114,7 +130,7 @@ def _collect_privacy_findings(project_root: Path) -> _PrivacyFindings:
         candidates=candidates,
         method_candidates=collect_method_candidates(
             modules,
-            public_interface=external_entrypoints | public_interface_exports,
+            public_interface=external_entrypoints | public_interface_exports | package_reexports,
             test_references=_test_helper_method_references(test_roots, modules, test_consumers),
         ),
         private_module_imports=collect_private_module_imports(modules),

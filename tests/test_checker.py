@@ -2260,6 +2260,37 @@ class Service:
     }
 
 
+def test_custom_decorators_with_safe_basenames_are_skipped(tmp_path: Path) -> None:
+    """A trusted decorator basename does not make an unrelated decorator rename-safe."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        """
+import registry
+from registry import final
+from .registry import property
+
+
+@registry.dataclass
+class Registered:
+    def run(self) -> int:
+        return 1
+
+
+class Service:
+    @final
+    def handle(self) -> int:
+        return 2
+
+    @property
+    def value(self) -> int:
+        return 3
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == set()
+
+
 def test_unknown_method_decorators_are_skipped(tmp_path: Path) -> None:
     """A decorator may register the method under its current name, so leave it alone."""
     _write(
@@ -2346,6 +2377,20 @@ class Internal:
     )
 
     assert _methods(tmp_path) == {("pkg.service", "Internal", "run_internal")}
+
+
+def test_package_reexported_class_methods_are_not_flagged(tmp_path: Path) -> None:
+    """A class re-exported from a package module is part of the package interface."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        "class Service:\n    def run(self) -> int:\n        return 1\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "__init__.py",
+        'from .service import Service\n\n__all__ = ["Service"]\n',
+    )
+
+    assert _methods(tmp_path) == set()
 
 
 def test_tach_interface_class_methods_are_not_flagged(tmp_path: Path) -> None:
@@ -2450,6 +2495,35 @@ def test_value() -> None:
     )
 
     assert _methods(tmp_path) == {("something", "Helper", "get_unused")}
+
+
+def test_test_method_references_are_scoped_to_the_imported_helper(tmp_path: Path) -> None:
+    """A test reference does not certify a same-named method in another helper."""
+    _write(
+        tmp_path / "tests" / "used_helper.py",
+        "class Helper:\n    def run(self) -> int:\n        return 1\n",
+    )
+    _write(
+        tmp_path / "tests" / "unused_helper.py",
+        "class Helper:\n    def run(self) -> int:\n        return 2\n",
+    )
+    _write(
+        tmp_path / "tests" / "test_used_helper.py",
+        """
+from used_helper import Helper
+
+
+def test_run() -> None:
+    assert Helper().run() == 1
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "tach.toml",
+        'source_roots = ["tests"]\n',
+    )
+
+    assert _methods(tmp_path) == {("unused_helper", "Helper", "run")}
 
 
 def test_methods_used_only_by_tests_are_flagged(tmp_path: Path) -> None:

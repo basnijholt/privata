@@ -12,20 +12,32 @@ if TYPE_CHECKING:
 
     from privata._models import Module
 
-# Decorators that leave a method free to be renamed. Anything else may register
-# the method under its current name, so decorated methods are left alone.
+# Decorators that leave a method free to be renamed. Canonical names avoid
+# treating unrelated decorators with a trusted basename as rename-safe.
 _SAFE_METHOD_DECORATORS = frozenset(
     {
-        "cache",
-        "cached_property",
-        "classmethod",
-        "final",
-        "lru_cache",
-        "property",
-        "staticmethod",
+        "builtins.classmethod",
+        "builtins.property",
+        "builtins.staticmethod",
+        "functools.cache",
+        "functools.cached_property",
+        "functools.lru_cache",
+        "typing.final",
+        "typing_extensions.final",
     },
 )
-_SAFE_CLASS_DECORATORS = frozenset({"dataclass", "final"})
+_SAFE_CLASS_DECORATORS = frozenset(
+    {
+        "dataclasses.dataclass",
+        "typing.final",
+        "typing_extensions.final",
+    },
+)
+_BUILTIN_DECORATORS = {
+    "classmethod": "builtins.classmethod",
+    "property": "builtins.property",
+    "staticmethod": "builtins.staticmethod",
+}
 
 
 def collect_method_candidates(
@@ -48,10 +60,11 @@ def collect_method_candidates(
     for module in modules.values():
         if module.tree is None:
             continue
+        decorator_aliases = _decorator_aliases(module.tree)
         for node in module.tree.body:
             if not isinstance(node, ast.ClassDef):
                 continue
-            if not _is_checkable_class(node, module, interface):
+            if not _is_checkable_class(node, module, interface, decorator_aliases):
                 continue
             candidates.extend(
                 _class_method_candidates(
@@ -59,6 +72,7 @@ def collect_method_candidates(
                     node,
                     references,
                     extra_references.get(module.name, set()),
+                    decorator_aliases,
                 ),
             )
 
@@ -94,11 +108,12 @@ def _class_method_candidates(
     class_node: ast.ClassDef,
     references: Mapping[str, set[str]],
     test_references: set[str],
+    decorator_aliases: Mapping[str, str],
 ) -> Iterator[Method]:
     for node in class_node.body:
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
-        if not _is_checkable_method(node):
+        if not _is_checkable_method(node, decorator_aliases):
             continue
         if node.lineno in module.ignored_lines:
             continue
@@ -119,6 +134,7 @@ def _is_checkable_class(
     node: ast.ClassDef,
     module: Module,
     public_interface: set[tuple[str, str]],
+    decorator_aliases: Mapping[str, str],
 ) -> bool:
     """Return whether a class owns its method names outright.
 
@@ -134,25 +150,68 @@ def _is_checkable_class(
         return False
     if any(_dotted_name(base) != "object" for base in node.bases):
         return False
-    return _has_only_safe_decorators(node.decorator_list, _SAFE_CLASS_DECORATORS)
+    return _has_only_safe_decorators(
+        node.decorator_list,
+        _SAFE_CLASS_DECORATORS,
+        decorator_aliases,
+    )
 
 
-def _is_checkable_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+def _is_checkable_method(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    decorator_aliases: Mapping[str, str],
+) -> bool:
     if node.name.startswith("_"):
         return False
-    return _has_only_safe_decorators(node.decorator_list, _SAFE_METHOD_DECORATORS)
+    return _has_only_safe_decorators(
+        node.decorator_list,
+        _SAFE_METHOD_DECORATORS,
+        decorator_aliases,
+    )
 
 
-def _has_only_safe_decorators(decorators: list[ast.expr], safe_names: frozenset[str]) -> bool:
-    return all(_decorator_name(decorator) in safe_names for decorator in decorators)
+def _has_only_safe_decorators(
+    decorators: list[ast.expr],
+    safe_names: frozenset[str],
+    aliases: Mapping[str, str],
+) -> bool:
+    return all(_decorator_name(decorator, aliases) in safe_names for decorator in decorators)
 
 
-def _decorator_name(decorator: ast.expr) -> str | None:
+def _decorator_name(decorator: ast.expr, aliases: Mapping[str, str]) -> str | None:
     target = decorator.func if isinstance(decorator, ast.Call) else decorator
     dotted = _dotted_name(target)
     if dotted is None:
         return None
-    return dotted.rsplit(".", 1)[-1]
+    head, separator, tail = dotted.partition(".")
+    resolved = aliases.get(head, head)
+    return f"{resolved}.{tail}" if separator else resolved
+
+
+def _decorator_aliases(tree: ast.Module) -> dict[str, str]:  # noqa: C901
+    """Return canonical module-level names used by decorator expressions."""
+    aliases = dict(_BUILTIN_DECORATORS)
+
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                local = alias.asname or alias.name.split(".", 1)[0]
+                imported = alias.name if alias.asname else local
+                aliases[local] = imported
+        elif isinstance(node, ast.ImportFrom):
+            source = f"{'.' * node.level}{node.module or ''}"
+            for alias in node.names:
+                if alias.name != "*":
+                    aliases[alias.asname or alias.name] = f"{source}.{alias.name}"
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            aliases[node.name] = node.name
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                for child in ast.walk(target):
+                    if isinstance(child, ast.Name):
+                        aliases[child.id] = child.id
+    return aliases
 
 
 def _dotted_name(node: ast.expr) -> str | None:
