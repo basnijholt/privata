@@ -104,9 +104,14 @@ def _test_helper_method_references(
 def _collect_privacy_findings(
     project_root: Path,
     *,
-    include_methods: bool = True,
+    include_methods: bool,
 ) -> _PrivacyFindings:
-    """Collect public-symbol and private-module boundary findings."""
+    """Collect public-symbol and private-module boundary findings.
+
+    ``include_methods`` is required rather than defaulted: the method scan is
+    the most expensive part of a run, and every caller knows whether it wants
+    the answer.
+    """
     roots = source_roots(project_root)
     modules, unparsable_modules = collect_modules_with_errors(roots)
     test_roots = [root for root in roots if is_test_source_root(root)]
@@ -156,37 +161,37 @@ def _collect_privacy_findings(
 
 def find_unparsable_modules(project_root: Path) -> list[UnparsableModule]:
     """Find production source files that could not be parsed."""
-    return _collect_privacy_findings(project_root).unparsable_modules
+    return _collect_privacy_findings(project_root, include_methods=False).unparsable_modules
 
 
 def find_private_candidates(project_root: Path) -> list[Symbol]:
     """Find symbols that appear module-local and should be private."""
-    return _collect_privacy_findings(project_root).candidates
+    return _collect_privacy_findings(project_root, include_methods=False).candidates
 
 
 def find_method_candidates(project_root: Path) -> list[Method]:
     """Find public methods that only their own module refers to."""
-    return _collect_privacy_findings(project_root).method_candidates
+    return _collect_privacy_findings(project_root, include_methods=True).method_candidates
 
 
 def find_private_module_imports(project_root: Path) -> list[PrivateModuleImport]:
     """Find private modules imported from outside their package subtree."""
-    return _collect_privacy_findings(project_root).private_module_imports
+    return _collect_privacy_findings(project_root, include_methods=False).private_module_imports
 
 
 def find_private_symbol_imports(project_root: Path) -> list[PrivateSymbolImport]:
     """Find private top-level symbols imported from another production module."""
-    return _collect_privacy_findings(project_root).private_symbol_imports
+    return _collect_privacy_findings(project_root, include_methods=False).private_symbol_imports
 
 
 def find_export_issues(project_root: Path) -> list[ExportIssue]:
     """Find literal __all__ declarations that are stale or incomplete."""
-    return _collect_privacy_findings(project_root).export_issues
+    return _collect_privacy_findings(project_root, include_methods=False).export_issues
 
 
 def find_module_collisions(project_root: Path) -> list[ModuleCollision]:
     """Find module names that resolve to more than one file across source roots."""
-    return _collect_privacy_findings(project_root).module_collisions
+    return _collect_privacy_findings(project_root, include_methods=False).module_collisions
 
 
 def check_project(project_root: Path, *, include_methods: bool = False) -> int:

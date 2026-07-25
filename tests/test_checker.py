@@ -2481,6 +2481,47 @@ property = lambda function: function
     assert _methods(tmp_path) == set()
 
 
+def test_class_decorator_rooted_in_a_subscript_is_unsafe(tmp_path: Path) -> None:
+    """A decorator Privata cannot resolve to a dotted name keeps the class off the report."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        """
+REGISTRIES = {"main": None}
+
+
+@REGISTRIES["main"].register
+class Service:
+    def helper(self) -> int:
+        return 1
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == set()
+
+
+def test_import_inside_a_compound_statement_shadows_a_decorator_name(tmp_path: Path) -> None:
+    """A guarded import rebinds the name, so the decorator is no longer trusted."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        """
+try:
+    import dataclasses
+except ImportError:
+    dataclasses = None
+
+
+@dataclasses.dataclass
+class Service:
+    def helper(self) -> int:
+        return 1
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == set()
+
+
 def test_compound_decorator_bindings_are_conservative(tmp_path: Path) -> None:
     """Every binding form can shadow a trusted decorator name."""
     _write(
