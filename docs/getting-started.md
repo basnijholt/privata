@@ -58,7 +58,7 @@ Add Privata to another repository's `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/basnijholt/privata
-    rev: v0.7.0
+    rev: v0.8.0
     hooks:
       - id: privata
 ```
