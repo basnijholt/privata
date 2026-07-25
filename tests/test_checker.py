@@ -2894,6 +2894,54 @@ def test_run() -> None:
     assert _methods(tmp_path) == {("unused_helper", "Helper", "run")}
 
 
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "(lambda Helper: Helper.run())(object())",
+        "[Helper.run() for Helper in [object()]]",
+        "[Helper for Helper in [object()] if Helper.run()]",
+    ],
+    ids=["lambda", "comprehension", "comprehension-filter"],
+)
+def test_expression_local_shadowing_does_not_certify_helper_method(
+    tmp_path: Path,
+    expression: str,
+) -> None:
+    """Expression-local names replace imported helper bindings."""
+    _write(
+        tmp_path / "tests" / "helper.py",
+        "class Helper:\n    def run(self) -> int:\n        return 1\n",
+    )
+    _write(
+        tmp_path / "tests" / "test_helper.py",
+        f"from helper import Helper\n\n{expression}\n",
+    )
+    _write(
+        tmp_path / "tach.toml",
+        'source_roots = ["tests"]\n',
+    )
+
+    assert _methods(tmp_path) == {("helper", "Helper", "run")}
+
+
+def test_lambda_default_uses_outer_helper_binding(tmp_path: Path) -> None:
+    """Lambda defaults are evaluated before parameter bindings exist."""
+    _write(
+        tmp_path / "tests" / "helper.py",
+        "class Helper:\n    def run(self) -> int:\n        return 1\n",
+    )
+    _write(
+        tmp_path / "tests" / "test_helper.py",
+        "from helper import Helper\n\ncallback = lambda value=Helper.run: value\n",
+    )
+    _write(
+        tmp_path / "tach.toml",
+        'source_roots = ["tests"]\n',
+    )
+
+    assert _methods(tmp_path) == set()
+
+
 def test_interleaved_test_helper_bindings_preserve_source_order(tmp_path: Path) -> None:
     """An assignment before a later import does not erase the runtime-winning import."""
     _write(

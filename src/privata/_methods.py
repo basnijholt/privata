@@ -575,29 +575,6 @@ def _collect_scoped_references(  # noqa: C901, PLR0912, PLR0913, PLR0915
             )
 
 
-def _analyze_function_calls(  # noqa: PLR0913
-    root: ast.AST,
-    functions: Mapping[str, ast.FunctionDef | ast.AsyncFunctionDef],
-    invoked_functions: set[int],
-    bindings: Mapping[str, set[str]],
-    package_parts: tuple[str, ...],
-    known_modules: Mapping[str, Module],
-    references: dict[str, set[str]],
-) -> None:
-    for node in ast.walk(root):
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            function = functions.get(node.func.id)
-            if function is not None:
-                invoked_functions.add(id(function))
-                _analyze_function(
-                    function,
-                    bindings,
-                    package_parts,
-                    known_modules,
-                    references,
-                )
-
-
 def _scan_expression(  # noqa: PLR0913
     root: ast.AST,
     functions: Mapping[str, ast.FunctionDef | ast.AsyncFunctionDef],
@@ -607,16 +584,114 @@ def _scan_expression(  # noqa: PLR0913
     known_modules: Mapping[str, Module],
     references: dict[str, set[str]],
 ) -> None:
-    _analyze_function_calls(
-        root,
-        functions,
-        invoked_functions,
-        bindings,
-        package_parts,
-        known_modules,
-        references,
-    )
-    _record_references(root, bindings, references)
+    if isinstance(root, ast.Lambda):
+        for default in [
+            *root.args.defaults,
+            *(default for default in root.args.kw_defaults if default is not None),
+        ]:
+            _scan_expression(
+                default,
+                functions,
+                invoked_functions,
+                bindings,
+                package_parts,
+                known_modules,
+                references,
+            )
+        local_bindings = _copy_bindings(bindings)
+        local_functions = dict(functions)
+        _bind_names(
+            {
+                argument.arg
+                for argument in [
+                    *root.args.posonlyargs,
+                    *root.args.args,
+                    *root.args.kwonlyargs,
+                    root.args.vararg,
+                    root.args.kwarg,
+                ]
+                if argument is not None
+            },
+            set(),
+            local_bindings,
+            local_functions,
+        )
+        _scan_expression(
+            root.body,
+            local_functions,
+            invoked_functions,
+            local_bindings,
+            package_parts,
+            known_modules,
+            references,
+        )
+        return
+
+    if isinstance(root, (ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp)):
+        local_bindings = _copy_bindings(bindings)
+        local_functions = dict(functions)
+        for generator in root.generators:
+            _scan_expression(
+                generator.iter,
+                local_functions,
+                invoked_functions,
+                local_bindings,
+                package_parts,
+                known_modules,
+                references,
+            )
+            _bind_targets(
+                [generator.target],
+                _expression_modules(generator.iter, local_bindings),
+                local_bindings,
+                local_functions,
+            )
+            for condition in generator.ifs:
+                _scan_expression(
+                    condition,
+                    local_functions,
+                    invoked_functions,
+                    local_bindings,
+                    package_parts,
+                    known_modules,
+                    references,
+                )
+        results = [root.key, root.value] if isinstance(root, ast.DictComp) else [root.elt]
+        for result in results:
+            _scan_expression(
+                result,
+                local_functions,
+                invoked_functions,
+                local_bindings,
+                package_parts,
+                known_modules,
+                references,
+            )
+        return
+
+    if isinstance(root, ast.Call) and isinstance(root.func, ast.Name):
+        function = functions.get(root.func.id)
+        if function is not None:
+            invoked_functions.add(id(function))
+            _analyze_function(
+                function,
+                bindings,
+                package_parts,
+                known_modules,
+                references,
+            )
+
+    _record_reference(root, bindings, references)
+    for child in ast.iter_child_nodes(root):
+        _scan_expression(
+            child,
+            functions,
+            invoked_functions,
+            bindings,
+            package_parts,
+            known_modules,
+            references,
+        )
 
 
 def _analyze_function(
@@ -648,30 +723,29 @@ def _analyze_function(
     )
 
 
-def _record_references(
-    root: ast.AST,
+def _record_reference(
+    node: ast.AST,
     bindings: Mapping[str, set[str]],
     references: dict[str, set[str]],
 ) -> None:
-    for node in ast.walk(root):
-        if isinstance(node, ast.Attribute):
-            for source in _expression_modules(node.value, bindings):
-                references.setdefault(source, set()).add(node.attr)
-        elif isinstance(node, ast.Call):
-            strings = {
-                value.value
-                for value in [*node.args, *(keyword.value for keyword in node.keywords)]
-                if isinstance(value, ast.Constant) and isinstance(value.value, str)
+    if isinstance(node, ast.Attribute):
+        for source in _expression_modules(node.value, bindings):
+            references.setdefault(source, set()).add(node.attr)
+    elif isinstance(node, ast.Call):
+        strings = {
+            value.value
+            for value in [*node.args, *(keyword.value for keyword in node.keywords)]
+            if isinstance(value, ast.Constant) and isinstance(value.value, str)
+        }
+        if strings:
+            expressions = [node.func, *node.args, *(keyword.value for keyword in node.keywords)]
+            sources = {
+                source
+                for expression in expressions
+                for source in _expression_modules(expression, bindings)
             }
-            if strings:
-                expressions = [node.func, *node.args, *(keyword.value for keyword in node.keywords)]
-                sources = {
-                    source
-                    for expression in expressions
-                    for source in _expression_modules(expression, bindings)
-                }
-                for source in sources:
-                    references.setdefault(source, set()).update(strings)
+            for source in sources:
+                references.setdefault(source, set()).update(strings)
 
 
 def _collect_branch(  # noqa: PLR0913
