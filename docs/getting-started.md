@@ -48,7 +48,7 @@ privata .
 ```
 
 Privata exits with status `0` when no privacy issues are found.
-It exits with status `1` when it finds public symbols that can be made private or private module imports that cross package boundaries.
+It exits with status `1` when it finds public symbols or methods that can be made private, or private module imports that cross package boundaries.
 
 ## Pre-Commit
 

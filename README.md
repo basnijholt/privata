@@ -11,9 +11,10 @@
 Find Python code that looks public but is only used privately.
 
 Privata is a static checker for keeping module boundaries intentional.
-It scans your production Python modules and reports four kinds of interface drift:
+It scans your production Python modules and reports five kinds of interface drift:
 
 - public top-level functions, classes, variables, and type aliases that are only used inside their own module
+- public methods such as `Service.helper` that no other production module ever refers to
 - imports of private modules such as `pkg._internal` from outside their owning package subtree
 - imports of private top-level symbols such as `pkg.service._Helper` from another production module
 - literal `__all__` declarations that are stale, incomplete, or exporting names that do not exist
@@ -99,6 +100,10 @@ Found 2 public symbols that could be made private:
   src/example/service.py:12: function `helper`
   src/example/service.py:21: class `InternalState`
 
+Found 1 public methods that could be made private:
+
+  src/example/service.py:25: method `InternalState.reset`
+
 Found 1 private module imports outside their package subtree:
 
   src/example/api.py:3: imports private module `example.worker._runtime`
@@ -122,6 +127,7 @@ No module privacy issues found.
 
 - Public top-level functions, classes, variables, and type aliases in production source roots.
 - Whether those symbols are imported by another production module under those roots.
+- Public methods of plain classes, and whether any other production module refers to them by name.
 - Whether private modules such as `pkg._internal` are imported outside their containing package subtree.
 - Whether private top-level symbols are imported from another production module.
 - Whether literal `__all__` declarations exactly match public top-level bindings.
@@ -130,6 +136,23 @@ No module privacy issues found.
 - Symbols exported through package `__init__.py` and `__all__`.
 - Tach `[[interfaces]]` entries, when `tach.toml` is present.
 - Module names defined by more than one file across source roots (e.g. `src/utils.py` next to `tests/utils.py`, or `pkg.py` next to `pkg/__init__.py`). Such names are ambiguous at import time and only one file per name can be scanned, so Privata reports the collision instead of silently picking one.
+
+### Methods
+
+A public method is reported when no other production module mentions its name, either as an attribute access such as `service.helper()` or as a string literal such as `getattr(service, "helper")`.
+Use inside the defining module does not keep a method public, exactly as for top-level symbols.
+Matching is intentionally name-based rather than receiver-aware, so an unrelated attribute with the same name in another module conservatively suppresses the report.
+
+Because a method name can be owned by something Privata cannot see, the method check only looks at plain classes.
+It skips:
+
+- classes with a base class other than `object`, since the base may define the contract
+- classes that another class in the project subclasses, since renaming a base method would strand the override under its old name
+- classes with class keywords such as `metaclass=`, and classes with decorators other than `@dataclass` and `@final`
+- private classes, classes listed in `__all__`, classes re-exported by package `__init__.py`, and classes exposed through entry points or Tach interfaces
+- methods with decorators other than `@property`, `@staticmethod`, `@classmethod`, `@cached_property`, `@cache`, `@lru_cache`, and `@final`, since another decorator may register the method under its current name
+- methods that call the same method through `super()`, since cooperative mixins must preserve that name
+- dunder methods, methods that are already private, and classes nested inside functions or other classes
 
 Privata intentionally ignores imports from `tests/`.
 If only tests import a symbol, Privata treats that symbol as private.

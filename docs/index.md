@@ -10,7 +10,7 @@ icon: lucide/shield-check
   <img src="assets/logo.svg" alt="Privata logo" width="140" />
 </div>
 
-Privata scans Python source roots and reports public symbols that are only used inside their own module.
+Privata scans Python source roots and reports public symbols and methods that are only used inside their own module.
 It also reports private module imports that cross package boundaries.
 
 [PyPI package](https://pypi.org/project/privata/) · [GitHub repository](https://github.com/basnijholt/privata)
@@ -27,6 +27,7 @@ Continue with [Getting Started](getting-started.md), or see the [usage guide](us
 ## Features
 
 - Finds public module-level functions, classes, variables, and type aliases that can be made private.
+- Finds public methods of plain classes that no other production module refers to.
 - Ignores test imports when deciding whether a symbol is public.
 - Detects private modules imported from outside their owning package subtree.
 - Detects private top-level symbols imported by another production module.
@@ -43,4 +44,8 @@ Found 2 public symbols that could be made private:
 
   src/example/service.py:12: function `helper`
   src/example/service.py:21: class `InternalState`
+
+Found 1 public methods that could be made private:
+
+  src/example/service.py:25: method `InternalState.reset`
 ```

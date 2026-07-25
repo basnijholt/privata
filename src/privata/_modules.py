@@ -95,6 +95,7 @@ def collect_modules(source_roots: list[Path]) -> dict[str, Module]:  # noqa: C90
                 ),
                 tree=tree,
                 ignored_lines=_ignored_lines(source),
+                exports=frozenset(explicit_exports or ()),
             )
 
             for node in tree.body:
