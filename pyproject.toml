@@ -105,6 +105,9 @@ ignore = [
   "S105",    # test tokens
   "S106",    # test tokens
 ]
+"scripts/*" = [
+  "INP001",  # standalone maintenance scripts, not an importable package
+]
 
 [tool.ruff.format]
 quote-style = "double"
