@@ -2396,6 +2396,24 @@ def test_package_reexported_class_methods_are_not_flagged(tmp_path: Path) -> Non
     assert _methods(tmp_path) == set()
 
 
+def test_chained_package_reexported_class_methods_are_not_flagged(tmp_path: Path) -> None:
+    """Each package hop preserves the defining class as part of the public interface."""
+    _write(
+        tmp_path / "src" / "pkg" / "sub" / "impl.py",
+        "class Thing:\n    def run(self) -> int:\n        return 1\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "sub" / "__init__.py",
+        'from .impl import Thing\n\n__all__ = ["Thing"]\n',
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "__init__.py",
+        'from .sub import Thing\n\n__all__ = ["Thing"]\n',
+    )
+
+    assert _methods(tmp_path) == set()
+
+
 def test_tach_interface_class_methods_are_not_flagged(tmp_path: Path) -> None:
     """Methods of a class exposed through a Tach interface stay public."""
     _write(
