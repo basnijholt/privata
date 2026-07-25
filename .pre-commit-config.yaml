@@ -20,10 +20,19 @@ repos:
     hooks:
       - id: privata
         name: privata (module privacy)
-        entry: uv run privata .
+        # --methods is opt-in for users; Privata runs it on itself so the
+        # check's false positives surface here first.
+        entry: uv run privata . --methods
         language: system
         pass_filenames: false
         types_or: [python, pyi]
+
+      - id: docs-pin
+        name: docs pin (pre-commit rev is current)
+        entry: uv run python scripts/check_docs_pin.py
+        language: system
+        pass_filenames: false
+        files: ^(README\.md|docs/.*\.md|src/privata/_version\.py)$
 
       - id: mypy
         name: mypy (type checker)
