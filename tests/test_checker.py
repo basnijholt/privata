@@ -2979,6 +2979,46 @@ def test_expression_local_shadowing_does_not_certify_helper_method(
     assert _methods(tmp_path) == {("helper", "Helper", "run")}
 
 
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "(Helper := UsedHelper)",
+        "[(Helper := UsedHelper) for _ in [0]]",
+    ],
+    ids=["named-expression", "comprehension-named-expression"],
+)
+def test_named_expression_rebinding_uses_the_new_helper(
+    tmp_path: Path,
+    expression: str,
+) -> None:
+    """Walrus targets replace stale imports, including from a comprehension scope."""
+    _write(
+        tmp_path / "tests" / "used_helper.py",
+        "class Helper:\n    def run(self) -> int:\n        return 1\n",
+    )
+    _write(
+        tmp_path / "tests" / "unused_helper.py",
+        "class Helper:\n    def run(self) -> int:\n        return 2\n",
+    )
+    _write(
+        tmp_path / "tests" / "test_used_helper.py",
+        f"""
+from unused_helper import Helper
+from used_helper import Helper as UsedHelper
+
+{expression}
+Helper().run()
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "tach.toml",
+        'source_roots = ["tests"]\n',
+    )
+
+    assert _methods(tmp_path) == {("unused_helper", "Helper", "run")}
+
+
 def test_lambda_default_uses_outer_helper_binding(tmp_path: Path) -> None:
     """Lambda defaults are evaluated before parameter bindings exist."""
     _write(

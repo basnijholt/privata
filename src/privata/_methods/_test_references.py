@@ -23,6 +23,11 @@ if TYPE_CHECKING:
 
     from privata._models import Module
 
+_Function = ast.FunctionDef | ast.AsyncFunctionDef
+_Bindings = dict[str, set[str]]
+_Functions = dict[str, _Function]
+_ExpressionScope = tuple[_Bindings, _Functions]
+
 
 def referenced_names_by_module(
     module: Module,
@@ -436,13 +441,39 @@ def _collect_scoped_references(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
 def _scan_expression(  # noqa: PLR0913
     root: ast.AST,
-    functions: Mapping[str, ast.FunctionDef | ast.AsyncFunctionDef],
+    functions: _Functions,
     invoked_functions: set[int],
-    bindings: Mapping[str, set[str]],
+    bindings: _Bindings,
     package_parts: tuple[str, ...],
     known_modules: Mapping[str, Module],
     references: dict[str, set[str]],
+    named_expression_scope: _ExpressionScope | None = None,
 ) -> None:
+    assignment_scope = named_expression_scope or (
+        bindings,
+        functions,
+    )
+    assignment_bindings, assignment_functions = assignment_scope
+
+    if isinstance(root, ast.NamedExpr):
+        _scan_expression(
+            root.value,
+            functions,
+            invoked_functions,
+            bindings,
+            package_parts,
+            known_modules,
+            references,
+            assignment_scope,
+        )
+        bind_targets(
+            [root.target],
+            expression_modules(root.value, bindings),
+            assignment_bindings,
+            assignment_functions,
+        )
+        return
+
     if isinstance(root, ast.Lambda):
         for default in [
             *root.args.defaults,
@@ -456,6 +487,7 @@ def _scan_expression(  # noqa: PLR0913
                 package_parts,
                 known_modules,
                 references,
+                assignment_scope,
             )
         local_bindings = copy_bindings(bindings)
         local_functions = dict(functions)
@@ -498,6 +530,7 @@ def _scan_expression(  # noqa: PLR0913
                 package_parts,
                 known_modules,
                 references,
+                assignment_scope,
             )
             bind_targets(
                 [generator.target],
@@ -514,6 +547,7 @@ def _scan_expression(  # noqa: PLR0913
                     package_parts,
                     known_modules,
                     references,
+                    assignment_scope,
                 )
         results = [root.key, root.value] if isinstance(root, ast.DictComp) else [root.elt]
         for result in results:
@@ -525,20 +559,20 @@ def _scan_expression(  # noqa: PLR0913
                 package_parts,
                 known_modules,
                 references,
+                assignment_scope,
             )
         return
 
-    if isinstance(root, ast.Call) and isinstance(root.func, ast.Name):
-        function = functions.get(root.func.id)
-        if function is not None:
-            invoked_functions.add(id(function))
-            _analyze_function(
-                function,
-                bindings,
-                package_parts,
-                known_modules,
-                references,
-            )
+    function = _deferred_function(root, functions)
+    if function is not None:
+        invoked_functions.add(id(function))
+        _analyze_function(
+            function,
+            bindings,
+            package_parts,
+            known_modules,
+            references,
+        )
 
     _record_reference(root, bindings, references)
     for child in ast.iter_child_nodes(root):
@@ -550,7 +584,17 @@ def _scan_expression(  # noqa: PLR0913
             package_parts,
             known_modules,
             references,
+            assignment_scope,
         )
+
+
+def _deferred_function(
+    root: ast.AST,
+    functions: Mapping[str, _Function],
+) -> _Function | None:
+    if not isinstance(root, ast.Call) or not isinstance(root.func, ast.Name):
+        return None
+    return functions.get(root.func.id)
 
 
 def _analyze_function(
