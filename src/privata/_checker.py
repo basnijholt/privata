@@ -11,6 +11,7 @@ from privata._imports import (
     collect_private_symbol_imports,
     find_cross_imports,
 )
+from privata._methods import collect_method_candidates, referenced_names
 from privata._modules import collect_module_collisions, collect_modules, collect_test_consumers
 from privata._source_roots import is_test_source_root, source_roots
 
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
 
     from privata._models import (
         ExportIssue,
+        Method,
         Module,
         ModuleCollision,
         PrivateModuleImport,
@@ -32,6 +34,7 @@ class _PrivacyFindings(NamedTuple):
     """All findings produced by one scan of a project."""
 
     candidates: list[Symbol]
+    method_candidates: list[Method]
     private_module_imports: list[PrivateModuleImport]
     private_symbol_imports: list[PrivateSymbolImport]
     export_issues: list[ExportIssue]
@@ -39,16 +42,15 @@ class _PrivacyFindings(NamedTuple):
 
 
 def _test_helper_cross_imports(
-    roots: list[Path],
+    test_roots: list[Path],
     modules: dict[str, Module],
+    test_consumers: dict[str, Module],
 ) -> set[tuple[str, str]]:
     """Return helper-module symbols in test source roots that co-located test files use.
 
     Each pass is scoped to a single test root so that test files can only certify
     helper modules in their own root, never production symbols.
     """
-    test_roots = [root for root in roots if is_test_source_root(root)]
-    test_consumers = collect_test_consumers(test_roots)
     used: set[tuple[str, str]] = set()
     for root in test_roots:
         helpers = {
@@ -63,11 +65,39 @@ def _test_helper_cross_imports(
     return used
 
 
+def _test_helper_method_references(
+    test_roots: list[Path],
+    modules: dict[str, Module],
+    test_consumers: dict[str, Module],
+) -> dict[str, set[str]]:
+    """Return names that co-located test files mention, per helper module.
+
+    Helper modules in a test source root exist to serve their own test files, so
+    a method those tests call is treated as used.
+    """
+    references: dict[str, set[str]] = {}
+    for root in test_roots:
+        names: set[str] = set()
+        for consumer in test_consumers.values():
+            if consumer.path.is_relative_to(root):
+                names |= referenced_names(consumer)
+        for module_name, module in modules.items():
+            if module.path.is_relative_to(root):
+                references.setdefault(module_name, set()).update(names)
+    return references
+
+
 def _collect_privacy_findings(project_root: Path) -> _PrivacyFindings:
     """Collect public-symbol and private-module boundary findings."""
     roots = source_roots(project_root)
     modules = collect_modules(roots)
-    cross_imports = find_cross_imports(modules) | _test_helper_cross_imports(roots, modules)
+    test_roots = [root for root in roots if is_test_source_root(root)]
+    test_consumers = collect_test_consumers(test_roots)
+    cross_imports = find_cross_imports(modules) | _test_helper_cross_imports(
+        test_roots,
+        modules,
+        test_consumers,
+    )
     external_entrypoints = collect_external_entrypoints(project_root)
     public_interface_exports = load_tach_interface_exports(project_root)
 
@@ -82,6 +112,11 @@ def _collect_privacy_findings(project_root: Path) -> _PrivacyFindings:
     candidates.sort(key=lambda s: (str(s.path), s.lineno))
     return _PrivacyFindings(
         candidates=candidates,
+        method_candidates=collect_method_candidates(
+            modules,
+            public_interface=external_entrypoints | public_interface_exports,
+            test_references=_test_helper_method_references(test_roots, modules, test_consumers),
+        ),
         private_module_imports=collect_private_module_imports(modules),
         private_symbol_imports=collect_private_symbol_imports(modules),
         export_issues=collect_export_issues(modules),
@@ -92,6 +127,11 @@ def _collect_privacy_findings(project_root: Path) -> _PrivacyFindings:
 def find_private_candidates(project_root: Path) -> list[Symbol]:
     """Find symbols that appear module-local and should be private."""
     return _collect_privacy_findings(project_root).candidates
+
+
+def find_method_candidates(project_root: Path) -> list[Method]:
+    """Find public methods that only their own module refers to."""
+    return _collect_privacy_findings(project_root).method_candidates
 
 
 def find_private_module_imports(project_root: Path) -> list[PrivateModuleImport]:
@@ -127,6 +167,10 @@ def check_project(project_root: Path) -> int:
         (
             bool(findings.candidates),
             lambda: _print_private_candidates(findings.candidates, project_root),
+        ),
+        (
+            bool(findings.method_candidates),
+            lambda: _print_method_candidates(findings.method_candidates, project_root),
         ),
         (
             bool(findings.private_module_imports),
@@ -170,6 +214,13 @@ def _print_private_candidates(candidates: list[Symbol], project_root: Path) -> N
     for symbol in candidates:
         rel = symbol.path.relative_to(project_root).as_posix()
         print(f"  {rel}:{symbol.lineno}: {symbol.kind} `{symbol.name}`")
+
+
+def _print_method_candidates(methods: list[Method], project_root: Path) -> None:
+    print(f"Found {len(methods)} public methods that could be made private:\n")
+    for method in methods:
+        rel = method.path.relative_to(project_root).as_posix()
+        print(f"  {rel}:{method.lineno}: method `{method.class_name}.{method.name}`")
 
 
 def _print_private_module_imports(

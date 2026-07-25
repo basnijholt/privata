@@ -10,6 +10,7 @@ import pytest
 
 from privata import (
     find_export_issues,
+    find_method_candidates,
     find_module_collisions,
     find_private_candidates,
     find_private_module_imports,
@@ -21,6 +22,7 @@ from privata._imports import (
     collect_private_symbol_imports,
     find_cross_imports,
 )
+from privata._methods import collect_method_candidates, referenced_names
 from privata._models import Module
 from privata.cli import main as cli_main
 
@@ -32,6 +34,13 @@ def _write(path: Path, content: str) -> None:
 
 def _symbols(project_root: Path) -> set[tuple[str, str]]:
     return {(symbol.module, symbol.name) for symbol in find_private_candidates(project_root)}
+
+
+def _methods(project_root: Path) -> set[tuple[str, str, str]]:
+    return {
+        (method.module, method.class_name, method.name)
+        for method in find_method_candidates(project_root)
+    }
 
 
 def _private_module_imports(project_root: Path) -> set[tuple[str, str]]:
@@ -2071,3 +2080,433 @@ def test_cli_reports_module_collisions_before_other_findings(
     assert "module `utils` is defined by: src/utils.py, tests/utils.py" in output.out
     assert "public symbols that could be made private" in output.out
     assert output.out.index("defined by multiple files") < output.out.index("could be made private")
+
+
+def test_module_local_public_method_is_flagged(tmp_path: Path) -> None:
+    """A public method that only its own module uses should be reported."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        """
+class Service:
+    label = "service"
+
+    def __init__(self) -> None:
+        self.count = 0
+
+    def run(self) -> int:
+        return self.helper()
+
+    def helper(self) -> int:
+        return 1
+
+    async def async_helper(self) -> int:
+        return 2
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "app.py",
+        "from pkg.service import Service\n\n\ndef start() -> int:\n    return Service().run()\n",
+    )
+
+    assert _methods(tmp_path) == {
+        ("pkg.service", "Service", "helper"),
+        ("pkg.service", "Service", "async_helper"),
+    }
+
+
+def test_method_used_from_another_module_is_not_flagged(tmp_path: Path) -> None:
+    """Attribute access from another production module keeps a method public."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        "class Service:\n    def run(self) -> int:\n        return 1\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "app.py",
+        "from pkg.service import Service\n\n\ndef start() -> int:\n    return Service().run()\n",
+    )
+
+    assert _methods(tmp_path) == set()
+
+
+def test_method_named_in_a_string_literal_elsewhere_is_not_flagged(tmp_path: Path) -> None:
+    """A getattr-style string reference in another module keeps a method public."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        "class Service:\n    def run(self) -> int:\n        return 1\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "app.py",
+        """
+from pkg.service import Service
+
+
+def start() -> int:
+    return getattr(Service(), "run")()
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == set()
+
+
+def test_private_and_dunder_methods_are_not_flagged(tmp_path: Path) -> None:
+    """Methods that are already private, and dunder methods, are never candidates."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        """
+class Service:
+    def __init__(self) -> None:
+        self.value = 1
+
+    def __repr__(self) -> str:
+        return "Service()"
+
+    def _helper(self) -> int:
+        return self.value
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == set()
+
+
+def test_methods_of_private_classes_are_not_flagged(tmp_path: Path) -> None:
+    """A private class is already internal, so its method names are not reported."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        "class _Service:\n    def run(self) -> int:\n        return 1\n",
+    )
+
+    assert _methods(tmp_path) == set()
+
+
+def test_methods_of_subclasses_are_not_flagged(tmp_path: Path) -> None:
+    """A base class Privata cannot inspect may require the method name, so skip the class."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        """
+from abc import ABC
+
+
+class Service(ABC):
+    def run(self) -> int:
+        return 1
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == set()
+
+
+def test_methods_of_classes_with_class_keywords_are_not_flagged(tmp_path: Path) -> None:
+    """Class keyword arguments such as metaclass= signal an external contract."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        """
+class Service(metaclass=type):
+    def run(self) -> int:
+        return 1
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == set()
+
+
+def test_explicit_object_base_is_still_checked(tmp_path: Path) -> None:
+    """An explicit object base adds no external contract."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        "class Service(object):\n    def run(self) -> int:\n        return 1\n",
+    )
+
+    assert _methods(tmp_path) == {("pkg.service", "Service", "run")}
+
+
+def test_rename_safe_decorators_are_still_checked(tmp_path: Path) -> None:
+    """Decorators that only change binding behavior do not protect a method name."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        """
+import functools
+
+
+class Service:
+    @property
+    def value(self) -> int:
+        return 1
+
+    @staticmethod
+    def build() -> int:
+        return 2
+
+    @classmethod
+    def create(cls) -> int:
+        return 3
+
+    @functools.cached_property
+    def total(self) -> int:
+        return 4
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == {
+        ("pkg.service", "Service", "value"),
+        ("pkg.service", "Service", "build"),
+        ("pkg.service", "Service", "create"),
+        ("pkg.service", "Service", "total"),
+    }
+
+
+def test_unknown_method_decorators_are_skipped(tmp_path: Path) -> None:
+    """A decorator may register the method under its current name, so leave it alone."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        """
+import celery
+
+registry = {}
+
+
+class Service:
+    @celery.task
+    def run(self) -> int:
+        return 1
+
+    @registry["handler"]
+    def handle(self) -> int:
+        return 2
+
+    @property
+    def value(self) -> int:
+        return 3
+
+    @value.setter
+    def value(self, new_value: int) -> None:
+        self._value = new_value
+""".strip()
+        + "\n",
+    )
+
+    methods = _methods(tmp_path)
+    assert ("pkg.service", "Service", "run") not in methods
+    assert ("pkg.service", "Service", "handle") not in methods
+    assert methods == {("pkg.service", "Service", "value")}
+
+
+def test_unknown_class_decorators_are_skipped(tmp_path: Path) -> None:
+    """A decorated class may be registered elsewhere, while dataclasses stay checkable."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        """
+from dataclasses import dataclass
+
+import registry
+
+
+@registry.register
+class Registered:
+    def run(self) -> int:
+        return 1
+
+
+@dataclass
+class Plain:
+    value: int = 0
+
+    def compute(self) -> int:
+        return self.value
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == {("pkg.service", "Plain", "compute")}
+
+
+def test_exported_class_methods_are_not_flagged(tmp_path: Path) -> None:
+    """Methods of a class listed in __all__ are part of the module interface."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        """
+__all__ = ["Service"]
+
+
+class Service:
+    def run(self) -> int:
+        return 1
+
+
+class Internal:
+    def run_internal(self) -> int:
+        return 2
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == {("pkg.service", "Internal", "run_internal")}
+
+
+def test_tach_interface_class_methods_are_not_flagged(tmp_path: Path) -> None:
+    """Methods of a class exposed through a Tach interface stay public."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        "class Service:\n    def run(self) -> int:\n        return 1\n",
+    )
+    _write(
+        tmp_path / "tach.toml",
+        """
+source_roots = ["src"]
+
+[[interfaces]]
+expose = ["Service"]
+from = ["pkg.service"]
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == set()
+
+
+def test_entrypoint_class_methods_are_not_flagged(tmp_path: Path) -> None:
+    """A class used as a console script target keeps its methods public."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        "class Service:\n    def run(self) -> int:\n        return 1\n",
+    )
+    _write(
+        tmp_path / "pyproject.toml",
+        '[project]\nname = "pkg"\n\n[project.scripts]\npkg = "pkg.service:Service"\n',
+    )
+
+    assert _methods(tmp_path) == set()
+
+
+def test_method_ignore_comment_suppresses_finding(tmp_path: Path) -> None:
+    """A # privata: ignore comment on the def line suppresses the method finding."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        """
+class Service:
+    def kept(self) -> int:  # privata: ignore
+        return 1
+
+    def flagged(self) -> int:
+        return 2
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == {("pkg.service", "Service", "flagged")}
+
+
+def test_methods_of_nested_classes_are_not_flagged(tmp_path: Path) -> None:
+    """Only top-level classes are inspected for method privacy."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        """
+def build() -> type:
+    class Nested:
+        def run(self) -> int:
+            return 1
+
+    return Nested
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == set()
+
+
+def test_test_source_root_test_files_certify_helper_methods(tmp_path: Path) -> None:
+    """Test files certify methods of helper modules in their own test source root."""
+    _write(
+        tmp_path / "tests" / "something.py",
+        """
+class Helper:
+    def get_value(self) -> int:
+        return 42
+
+    def get_unused(self) -> int:
+        return 0
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "tests" / "test_blah.py",
+        """
+from something import Helper
+
+
+def test_value() -> None:
+    assert Helper().get_value() == 42
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "tach.toml",
+        'source_roots = ["tests"]\n',
+    )
+
+    assert _methods(tmp_path) == {("something", "Helper", "get_unused")}
+
+
+def test_methods_used_only_by_tests_are_flagged(tmp_path: Path) -> None:
+    """Test usage does not keep a production method public."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        "class Service:\n    def run(self) -> int:\n        return 1\n",
+    )
+    _write(
+        tmp_path / "tests" / "test_service.py",
+        """
+from pkg.service import Service
+
+
+def test_run() -> None:
+    assert Service().run()
+""".strip()
+        + "\n",
+    )
+
+    assert _methods(tmp_path) == {("pkg.service", "Service", "run")}
+
+
+def test_method_collection_skips_modules_without_a_tree() -> None:
+    """Modules that failed to parse contribute no methods and no references."""
+    module = Module(name="pkg.mod", path=Path("pkg/mod.py"), package_parts=("pkg",))
+
+    assert referenced_names(module) == set()
+    assert collect_method_candidates({"pkg.mod": module}) == []
+
+
+def test_cli_reports_method_candidates(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Method candidates are printed in their own section after symbol candidates."""
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        """
+class Service:
+    def run(self) -> int:
+        return self.helper()
+
+    def helper(self) -> int:
+        return 1
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "app.py",
+        "from pkg.service import Service\n\n\ndef start() -> int:\n    return Service().run()\n",
+    )
+
+    assert cli_main([str(tmp_path)]) == 1
+    output = capsys.readouterr().out
+    assert "Found 1 public methods that could be made private:" in output
+    assert "src/pkg/service.py:5: method `Service.helper`" in output
+    assert output.index("public symbols that could be made private") < output.index(
+        "public methods that could be made private",
+    )

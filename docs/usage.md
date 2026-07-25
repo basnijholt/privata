@@ -54,6 +54,36 @@ def helper() -> int:
 
 If `helper` is only used inside its own module, Privata reports it as a candidate for `_helper`.
 
+## Public Methods
+
+Privata also reports public methods that no other production module refers to:
+
+```python
+class Service:
+    def run(self) -> int:
+        return self.helper()
+
+    def helper(self) -> int:
+        return 1
+```
+
+If another module calls `Service().run()` but nothing outside `service.py` mentions `helper`, Privata reports `helper` as a candidate for `_helper`.
+A method counts as used when another production module accesses the name as an attribute, such as `service.helper()`, or names it in a string literal, such as `getattr(service, "helper")`.
+As with top-level symbols, use inside the defining module does not keep a method public, and use from tests does not either.
+
+The name of a method can belong to something Privata cannot see, such as a framework base class or a registry, so the check only inspects plain classes and undecorated methods.
+Privata skips:
+
+- classes with a base class other than `object`, since the base may define the method contract
+- classes with class keywords such as `metaclass=`
+- classes with decorators other than `@dataclass` and `@final`
+- private classes, classes listed in `__all__`, and classes exposed through entry points or a Tach interface
+- classes nested inside functions or other classes
+- dunder methods and methods that are already private
+- methods carrying any decorator other than `@property`, `@staticmethod`, `@classmethod`, `@cached_property`, `@cache`, `@lru_cache`, and `@final`
+
+The last rule is what keeps route handlers, Pydantic validators, pytest fixtures, and Celery tasks out of the report: those methods are registered under their current name by a decorator.
+
 ## Private Module Imports
 
 Private modules are modules whose dotted path contains a private segment:
@@ -82,7 +112,7 @@ Tests are ignored, so tests can still import internals without making them publi
 
 The following keep a symbol public:
 
-- another module under a production source root imports the symbol
+- another module under a production source root imports the symbol, or refers to the method name
 - a package `__init__.py` re-exports the symbol
 - a literal `__all__` includes the symbol
 - `pyproject.toml` lists the symbol as a console or GUI script entry point
@@ -106,6 +136,14 @@ Add a `# privata: ignore` comment to any import line to suppress that specific f
 from pkg._internal import helper  # privata: ignore
 import pkg._internal  # privata: ignore
 from pkg.impl import _Service  # privata: ignore
+```
+
+The same comment works on a `def` line to keep a public method out of the report:
+
+```python
+class Service:
+    def run(self) -> int:  # privata: ignore
+        return 1
 ```
 
 The comment suppresses only the finding on that line. Other issues in the same file are still reported.

@@ -22,6 +22,17 @@ class Symbol:
 
 
 @dataclass
+class Method:
+    """A public method that no other production module references."""
+
+    name: str
+    class_name: str
+    lineno: int
+    module: str
+    path: Path
+
+
+@dataclass
 class Module:
     """A parsed Python module with its top-level symbols."""
 
@@ -32,6 +43,7 @@ class Module:
     private_symbols: list[Symbol] = field(default_factory=list)
     tree: ast.Module | None = None
     ignored_lines: frozenset[int] = frozenset()
+    exports: frozenset[str] = frozenset()
 
 
 @dataclass
