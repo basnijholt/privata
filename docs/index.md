@@ -45,7 +45,8 @@ Found 2 public symbols that could be made private:
   src/example/service.py:12: function `helper`
   src/example/service.py:21: class `InternalState`
 
-Found 1 public methods that could be made private:
+Found 2 public methods in 1 class that could be made private:
 
-  src/example/service.py:25: method `InternalState.reset`
+  src/example/service.py:21: class `InternalState` (2 of 5 public methods)
+      reset:25, drain:31
 ```

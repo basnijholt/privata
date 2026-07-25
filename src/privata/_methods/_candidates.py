@@ -152,6 +152,12 @@ def _class_method_candidates(
 ) -> Iterator[Method]:
     aliases = dict(decorator_aliases)
     protected_methods = _protected_method_nodes(class_node)
+    public_methods = sum(
+        1
+        for node in class_node.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and not node.name.startswith("_")
+    )
     for node in class_node.body:
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             _update_aliases(aliases, node)
@@ -174,6 +180,8 @@ def _class_method_candidates(
             lineno=node.lineno,
             module=module.name,
             path=module.path,
+            class_lineno=class_node.lineno,
+            class_public_methods=public_methods,
         )
 
 

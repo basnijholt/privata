@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import textwrap
 from typing import TYPE_CHECKING, NamedTuple
 
 from privata._entrypoints import collect_external_entrypoints, load_tach_interface_exports
@@ -37,6 +38,11 @@ if TYPE_CHECKING:
         Symbol,
         UnparsableModule,
     )
+
+
+_METHOD_LIST_INDENT = " " * 6
+# Keeps the indented method list inside the project's 100-column limit.
+_METHOD_LIST_WIDTH = 100 - len(_METHOD_LIST_INDENT)
 
 
 class _PrivacyFindings(NamedTuple):
@@ -253,9 +259,9 @@ def _print_unparsable_modules(
     project_root: Path,
 ) -> None:
     print(
-        f"Found {len(unparsable)} source files that could not be parsed; "
-        "they were skipped, so the names they reference stop counting and "
-        "every finding below may be wrong:\n",
+        f"Found {_count(len(unparsable), 'source file')} that could not be parsed; "
+        "skipped files stop contributing references, so every finding below "
+        "may be wrong:\n",
     )
     for module in unparsable:
         rel = module.path.relative_to(project_root).as_posix()
@@ -264,7 +270,7 @@ def _print_unparsable_modules(
 
 def _print_module_collisions(collisions: list[ModuleCollision], project_root: Path) -> None:
     print(
-        f"Found {len(collisions)} module names defined by multiple files; "
+        f"Found {_count(len(collisions), 'module name')} defined by multiple files; "
         "only one file per name is scanned, so findings for these modules "
         "may be incomplete:\n",
     )
@@ -274,17 +280,45 @@ def _print_module_collisions(collisions: list[ModuleCollision], project_root: Pa
 
 
 def _print_private_candidates(candidates: list[Symbol], project_root: Path) -> None:
-    print(f"Found {len(candidates)} public symbols that could be made private:\n")
+    print(f"Found {_count(len(candidates), 'public symbol')} that could be made private:\n")
     for symbol in candidates:
         rel = symbol.path.relative_to(project_root).as_posix()
         print(f"  {rel}:{symbol.lineno}: {symbol.kind} `{symbol.name}`")
 
 
 def _print_method_candidates(methods: list[Method], project_root: Path) -> None:
-    print(f"Found {len(methods)} public methods that could be made private:\n")
+    """Print method findings grouped by the class that owns them.
+
+    A flat list reads as one decision per method, which is misleading. Ten
+    findings in a ten-method class is a single question about the class; the
+    ``n of m`` count is what tells those apart, so it leads each group.
+    """
+    groups: dict[tuple[Path, int, str], list[Method]] = {}
     for method in methods:
-        rel = method.path.relative_to(project_root).as_posix()
-        print(f"  {rel}:{method.lineno}: method `{method.class_name}.{method.name}`")
+        key = (method.path, method.class_lineno, method.class_name)
+        groups.setdefault(key, []).append(method)
+
+    print(
+        f"Found {_count(len(methods), 'public method')} "
+        f"in {_count(len(groups), 'class', 'classes')} that could be made private:\n",
+    )
+    for (path, class_lineno, class_name), found in groups.items():
+        rel = path.relative_to(project_root).as_posix()
+        total = found[0].class_public_methods
+        print(
+            f"  {rel}:{class_lineno}: class `{class_name}` "
+            f"({len(found)} of {total} public methods)",
+        )
+        names = ", ".join(f"{method.name}:{method.lineno}" for method in found)
+        for line in textwrap.wrap(names, width=_METHOD_LIST_WIDTH, break_long_words=False):
+            print(f"{_METHOD_LIST_INDENT}{line}")
+
+
+def _count(number: int, singular: str, plural: str | None = None) -> str:
+    """Return ``number`` with a correctly pluralised noun."""
+    if number == 1:
+        return f"1 {singular}"
+    return f"{number} {plural if plural is not None else singular + 's'}"
 
 
 def _print_private_module_imports(
@@ -293,8 +327,8 @@ def _print_private_module_imports(
 ) -> None:
     print(
         "Found "
-        f"{len(private_module_imports)} "
-        "private module imports outside their package subtree:\n",
+        f"{_count(len(private_module_imports), 'private module import')} "
+        "outside the owning package subtree:\n",
     )
     for private_import in private_module_imports:
         rel = private_import.imported_by_path.relative_to(project_root).as_posix()
@@ -306,7 +340,8 @@ def _print_private_symbol_imports(
     project_root: Path,
 ) -> None:
     print(
-        f"Found {len(private_symbol_imports)} private symbol imports from production modules:\n",
+        f"Found {_count(len(private_symbol_imports), 'private symbol import')} "
+        "from production modules:\n",
     )
     for private_import in private_symbol_imports:
         rel = private_import.imported_by_path.relative_to(project_root).as_posix()
@@ -317,7 +352,7 @@ def _print_private_symbol_imports(
 
 
 def _print_export_issues(export_issues: list[ExportIssue], project_root: Path) -> None:
-    print(f"Found {len(export_issues)} __all__ export issues:\n")
+    print(f"Found {_count(len(export_issues), '__all__ export issue')}:\n")
     for export_issue in export_issues:
         rel = export_issue.path.relative_to(project_root).as_posix()
         if export_issue.kind == "unknown":
