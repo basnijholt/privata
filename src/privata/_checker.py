@@ -101,7 +101,11 @@ def _test_helper_method_references(
     return references
 
 
-def _collect_privacy_findings(project_root: Path) -> _PrivacyFindings:
+def _collect_privacy_findings(
+    project_root: Path,
+    *,
+    include_methods: bool = True,
+) -> _PrivacyFindings:
     """Collect public-symbol and private-module boundary findings."""
     roots = source_roots(project_root)
     modules, unparsable_modules = collect_modules_with_errors(roots)
@@ -128,10 +132,20 @@ def _collect_privacy_findings(project_root: Path) -> _PrivacyFindings:
     return _PrivacyFindings(
         unparsable_modules=unparsable_modules,
         candidates=candidates,
-        method_candidates=collect_method_candidates(
-            modules,
-            public_interface=external_entrypoints | public_interface_exports | package_reexports,
-            test_references=_test_helper_method_references(test_roots, modules, test_consumers),
+        method_candidates=(
+            collect_method_candidates(
+                modules,
+                public_interface=(
+                    external_entrypoints | public_interface_exports | package_reexports
+                ),
+                test_references=_test_helper_method_references(
+                    test_roots,
+                    modules,
+                    test_consumers,
+                ),
+            )
+            if include_methods
+            else []
         ),
         private_module_imports=collect_private_module_imports(modules),
         private_symbol_imports=collect_private_symbol_imports(modules),
@@ -175,10 +189,16 @@ def find_module_collisions(project_root: Path) -> list[ModuleCollision]:
     return _collect_privacy_findings(project_root).module_collisions
 
 
-def check_project(project_root: Path) -> int:
-    """Scan project and report module-local public symbols."""
+def check_project(project_root: Path, *, include_methods: bool = False) -> int:
+    """Scan project and report module-local public symbols.
+
+    The method check is off by default. Attribute access is dynamic in Python,
+    so it cannot see every caller, and on a large codebase it reports far more
+    than the other checks. Opt in with ``include_methods`` once the noise is
+    worth it for a given project.
+    """
     project_root = project_root.resolve()
-    findings = _collect_privacy_findings(project_root)
+    findings = _collect_privacy_findings(project_root, include_methods=include_methods)
 
     sections: list[tuple[bool, Callable[[], None]]] = [
         (

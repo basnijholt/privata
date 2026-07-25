@@ -56,7 +56,18 @@ If `helper` is only used inside its own module, Privata reports it as a candidat
 
 ## Public Methods
 
-Privata also reports public methods that no other production module refers to:
+Privata can also report public methods that no other production module refers to.
+This check is **off by default**; pass `--methods` to turn it on:
+
+```bash
+privata . --methods
+```
+
+It is opt-in because attribute access in Python is dynamic, so the check cannot see every caller, and on a large codebase it reports far more than the other checks.
+Turn it on once you have decided the extra noise is worth it for a given project.
+To enable it in the pre-commit hook above, add `args: [--methods]` to the hook entry.
+
+The library entry point `find_method_candidates` is unaffected by the flag and always reports.
 
 ```python
 class Service:

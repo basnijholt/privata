@@ -3282,7 +3282,7 @@ def test_cli_reports_method_candidates(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Method candidates are printed in their own section after symbol candidates."""
+    """With --methods, candidates are printed in their own section after symbols."""
     _write(
         tmp_path / "src" / "pkg" / "service.py",
         """
@@ -3300,10 +3300,68 @@ class Service:
         "from pkg.service import Service\n\n\ndef start() -> int:\n    return Service().run()\n",
     )
 
-    assert cli_main([str(tmp_path)]) == 1
+    assert cli_main([str(tmp_path), "--methods"]) == 1
     output = capsys.readouterr().out
     assert "Found 1 public methods that could be made private:" in output
     assert "src/pkg/service.py:5: method `Service.helper`" in output
     assert output.index("public symbols that could be made private") < output.index(
         "public methods that could be made private",
     )
+
+
+def _method_only_project(tmp_path: Path) -> None:
+    """Write a project whose only finding is a method that could be private."""
+    _write(tmp_path / "src" / "pkg" / "__init__.py", "")
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        """
+class Service:
+    def run(self) -> int:
+        return self.helper()
+
+    def helper(self) -> int:
+        return 1
+""".strip()
+        + "\n",
+    )
+    _write(
+        tmp_path / "src" / "pkg" / "app.py",
+        "from pkg.service import Service\n\n\ndef start() -> int:\n    return Service().run()\n",
+    )
+    _write(
+        tmp_path / "pyproject.toml",
+        '[project]\nname = "pkg"\n\n[project.scripts]\npkg = "pkg.app:start"\n',
+    )
+
+
+def test_cli_omits_method_candidates_without_the_flag(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The method check is opt-in, so a plain run passes and says nothing."""
+    _method_only_project(tmp_path)
+
+    assert cli_main([str(tmp_path)]) == 0
+    assert "No module privacy issues found." in capsys.readouterr().out
+
+
+def test_cli_methods_flag_turns_the_check_on(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The same project fails once the method check is requested."""
+    _method_only_project(tmp_path)
+
+    assert cli_main([str(tmp_path), "--methods"]) == 1
+    assert "method `Service.helper`" in capsys.readouterr().out
+
+
+def test_find_method_candidates_ignores_the_cli_default(tmp_path: Path) -> None:
+    """The library entry point still reports methods without any opt-in."""
+    _write(tmp_path / "src" / "pkg" / "__init__.py", "")
+    _write(
+        tmp_path / "src" / "pkg" / "service.py",
+        "class Service:\n    def helper(self) -> int:\n        return 1\n",
+    )
+
+    assert _methods(tmp_path) == {("pkg.service", "Service", "helper")}

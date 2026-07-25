@@ -27,7 +27,7 @@ Continue with [Getting Started](getting-started.md), or see the [usage guide](us
 ## Features
 
 - Finds public module-level functions, classes, variables, and type aliases that can be made private.
-- Finds public methods of plain classes that no other production module refers to.
+- Finds public methods of plain classes that no other production module refers to, when you pass `--methods`.
 - Ignores test imports when deciding whether a symbol is public.
 - Detects private modules imported from outside their owning package subtree.
 - Detects private top-level symbols imported by another production module.
