@@ -20,7 +20,7 @@ Add Privata to another repository's `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/basnijholt/privata
-    rev: v0.6.0
+    rev: v0.7.0
     hooks:
       - id: privata
 ```
@@ -33,7 +33,7 @@ For a less strict setup, use the manual hook:
 ```yaml
 repos:
   - repo: https://github.com/basnijholt/privata
-    rev: v0.6.0
+    rev: v0.7.0
     hooks:
       - id: privata-manual
 ```
