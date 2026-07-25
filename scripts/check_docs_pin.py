@@ -78,11 +78,11 @@ def main() -> int:
         print("No release tags available; skipping the freshness comparison.")
     else:
         for path, versions in sorted(pins.items()):
-            stale = sorted(version for version in versions if version < latest)
-            for version in stale:
-                problems.append(
-                    f"{path}: pins {_format(version)} but {_format(latest)} is released",
-                )
+            problems.extend(
+                f"{path}: pins {_format(version)} but {_format(latest)} is released"
+                for version in sorted(versions)
+                if version < latest
+            )
 
     for problem in problems:
         print(problem)
