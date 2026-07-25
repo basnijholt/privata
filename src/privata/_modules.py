@@ -5,7 +5,13 @@ from __future__ import annotations
 import ast
 from typing import TYPE_CHECKING
 
-from privata._models import Module, ModuleCollision, Symbol, SymbolCandidate
+from privata._models import (
+    Module,
+    ModuleCollision,
+    Symbol,
+    SymbolCandidate,
+    UnparsableModule,
+)
 from privata._source_roots import (
     is_in_ignored_directory,
     is_test_module_filename,
@@ -64,9 +70,21 @@ def _ignored_lines(source: str) -> frozenset[int]:
     )
 
 
-def collect_modules(source_roots: list[Path]) -> dict[str, Module]:  # noqa: C901, PLR0912
+def collect_modules(source_roots: list[Path]) -> dict[str, Module]:
     """Parse every production .py under source roots and collect top-level public definitions."""
+    return collect_modules_with_errors(source_roots)[0]
+
+
+def collect_modules_with_errors(  # noqa: C901, PLR0912
+    source_roots: list[Path],
+) -> tuple[dict[str, Module], list[UnparsableModule]]:
+    """Parse every production .py, returning both the modules and the failures.
+
+    Parsing is the dominant cost of a scan, so the files that failed are
+    collected in the same pass rather than by re-reading everything.
+    """
     modules: dict[str, Module] = {}
+    unparsable: list[UnparsableModule] = []
 
     for source_root in source_roots:
         for py_file in sorted(source_root.rglob("*.py")):
@@ -79,7 +97,15 @@ def collect_modules(source_roots: list[Path]) -> dict[str, Module]:  # noqa: C90
             source = py_file.read_text(encoding="utf-8")
             try:
                 tree = ast.parse(source, filename=str(py_file))
-            except SyntaxError:
+            except SyntaxError as error:
+                unparsable.append(
+                    UnparsableModule(
+                        module=mod_name,
+                        path=py_file,
+                        lineno=error.lineno or 0,
+                        message=error.msg,
+                    ),
+                )
                 continue
 
             explicit_exports = _extract_all(tree)
@@ -150,7 +176,7 @@ def collect_modules(source_roots: list[Path]) -> dict[str, Module]:  # noqa: C90
 
             modules[mod_name] = mod
 
-    return modules
+    return modules, unparsable
 
 
 def collect_module_collisions(source_roots: list[Path]) -> list[ModuleCollision]:
